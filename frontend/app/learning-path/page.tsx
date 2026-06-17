@@ -144,8 +144,9 @@ function LearningPathContent() {
             </div>
 
             {/* 热门主题 */}
-            {!path && popularTopics.length > 0 && (
+            {!path && popularTopics.length > 0 ? (
               <div className="topics-grid">
+                <p style={{ width: "100%", fontSize: 13, color: "var(--text-secondary)", marginBottom: 8 }}>🔥 热门知识点：</p>
                 {popularTopics.map((t) => (
                   <button
                     key={t.id}
@@ -157,7 +158,33 @@ function LearningPathContent() {
                   </button>
                 ))}
               </div>
-            )}
+            ) : !path ? (
+              <div className="topics-grid">
+                <p style={{ width: "100%", fontSize: 13, color: "var(--text-secondary)", marginBottom: 8 }}>
+                  💡 还没有编译数据？试试这些示例：
+                </p>
+                {[
+                  { name: "机器学习", desc: "人工智能核心" },
+                  { name: "Linux系统", desc: "服务器基础" },
+                  { name: "网络安全", desc: "渗透测试入门" },
+                  { name: "数据结构", desc: "编程基石" },
+                  { name: "深度学习", desc: "神经网络进阶" },
+                  { name: "Docker容器", desc: "应用部署" },
+                ].map((t) => (
+                  <button
+                    key={t.name}
+                    className="topic-chip"
+                    onClick={() => { setQuery(t.name); handleGenerate(t.name); }}
+                    title={t.desc}
+                  >
+                    {t.name}
+                  </button>
+                ))}
+                <p style={{ width: "100%", fontSize: 12, color: "var(--text-tertiary)", marginTop: 8 }}>
+                  ⚠️ 学习路径依赖已编译的视频知识库。请先在 <Link href="/workspace" style={{ color: "var(--link)", textDecoration: "underline" }}>工作台</Link> 编译视频后再生成路径。
+                </p>
+              </div>
+            ) : null}
 
             {/* 错误 */}
             {error && (

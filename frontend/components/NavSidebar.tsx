@@ -6,6 +6,7 @@ export default function NavSidebar() {
   const pathname = usePathname();
 
   const links = [
+    { href: "/", label: "首页", icon: "home", primary: true },
     { href: "/workspace", label: "工作台", icon: "workspace", primary: true },
     { href: "/tree", label: "知识树", icon: "tree", primary: true },
     { href: "/search", label: "搜索", icon: "search", primary: true },
@@ -17,6 +18,12 @@ export default function NavSidebar() {
   ];
 
   const icons: Record<string, React.ReactNode> = {
+    home: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+        <polyline points="9,22 9,12 15,12 15,22" />
+      </svg>
+    ),
     workspace: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
         <rect x="3" y="3" width="7" height="7" rx="1.5" />

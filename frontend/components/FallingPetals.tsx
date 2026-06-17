@@ -9,8 +9,9 @@ interface Petal {
   opacity: number; type: number; color: string;
 }
 
-const COLORS = ["#34d399","#10b981","#059669","#06b6d4","#a78bfa","#f9a8d4","#fbbf24"];
-const PETAL_COUNT = 20;
+// 牡丹花色系: 红、粉、玫红、淡紫
+const COLORS = ["#C12C3C", "#E84855", "#F5A0B5", "#DC143C", "#DB7093", "#FFB6C1", "#C71585"];
+const PETAL_COUNT = 16;
 
 export default function FallingPetals() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -22,7 +23,6 @@ export default function FallingPetals() {
     if (saved !== null) setEnabled(saved === "true");
     const handler = (e: Event) => setEnabled((e as CustomEvent).detail);
     window.addEventListener("petals-toggle", handler);
-    // 检测用户是否偏好减少动画
     prefersReducedMotion.current = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     return () => window.removeEventListener("petals-toggle", handler);
   }, []);
@@ -54,43 +54,70 @@ export default function FallingPetals() {
 
     const createPetal = (randomY: boolean): Petal => ({
       x: Math.random() * innerWidth,
-      y: randomY ? Math.random() * innerHeight : -20,
-      size: Math.random() < 0.5 ? 4 + Math.random() * 6 : 2 + Math.random() * 3,
-      speedX: (Math.random() - 0.5) * 0.6,
-      speedY: 0.4 + Math.random() * 1.0,
+      y: randomY ? Math.random() * innerHeight : -30,
+      size: Math.random() < 0.5 ? 8 + Math.random() * 10 : 4 + Math.random() * 6,
+      speedX: (Math.random() - 0.5) * 0.4,
+      speedY: 0.3 + Math.random() * 0.7,
       rotation: Math.random() * Math.PI * 2,
-      rotationSpeed: (Math.random() - 0.5) * 0.015,
-      opacity: 0.2 + Math.random() * 0.35,
-      type: Math.random() < 0.5 ? 0 : 2,
+      rotationSpeed: (Math.random() - 0.5) * 0.01,
+      opacity: 0.15 + Math.random() * 0.3,
+      type: Math.floor(Math.random() * 3),
       color: COLORS[Math.floor(Math.random() * COLORS.length)],
     });
 
     const petals: Petal[] = Array.from({ length: PETAL_COUNT }, () => createPetal(true));
 
-    const draw = (p: Petal) => {
+    // 牡丹花瓣 — 多层圆形叠加，模拟重瓣效果
+    const drawPeony = (p: Petal) => {
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate(p.rotation);
       ctx.globalAlpha = p.opacity;
-      if (p.type === 0) {
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.ellipse(0, 0, p.size * 0.5, p.size * 0.22, 0, 0, Math.PI * 2);
-        ctx.fill();
-      } else {
-        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, p.size);
-        g.addColorStop(0, p.color);
-        g.addColorStop(1, "transparent");
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(0, 0, p.size, 0, Math.PI * 2);
-        ctx.fill();
-      }
+
+      const outerR = p.size * 0.5;
+      const innerR = p.size * 0.25;
+
+      // 外层大花瓣
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, outerR, outerR * 0.65, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 内层小花瓣 — 稍深色
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = p.opacity * 1.2;
+      ctx.beginPath();
+      ctx.ellipse(0, outerR * 0.2, innerR, innerR * 0.8, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 中心点缀
+      ctx.fillStyle = "#FFE4B5";
+      ctx.globalAlpha = p.opacity * 0.6;
+      ctx.beginPath();
+      ctx.arc(outerR * 0.15, -outerR * 0.1, innerR * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    };
+
+    const drawRound = (p: Petal) => {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rotation);
+      ctx.globalAlpha = p.opacity;
+      const g = ctx.createRadialGradient(0, 0, p.size * 0.1, 0, 0, p.size);
+      g.addColorStop(0, "#FFE4B5");
+      g.addColorStop(0.5, p.color);
+      g.addColorStop(1, "transparent");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(0, 0, p.size, 0, Math.PI * 2);
+      ctx.fill();
       ctx.restore();
     };
 
     let lastTime = 0;
-    const FRAME_INTERVAL = 50; // ~20fps 节省GPU
+    const FRAME_INTERVAL = 50;
 
     const animate = (timestamp: number) => {
       if (timestamp - lastTime < FRAME_INTERVAL) {
@@ -103,10 +130,12 @@ export default function FallingPetals() {
         p.x += p.speedX;
         p.y += p.speedY;
         p.rotation += p.rotationSpeed;
-        if (p.y > innerHeight + 20) { Object.assign(p, createPetal(false)); p.y = -20; }
-        if (p.x < -20) p.x = innerWidth + 20;
-        if (p.x > innerWidth + 20) p.x = -20;
-        draw(p);
+        if (p.y > innerHeight + 30) { Object.assign(p, createPetal(false)); p.y = -30; }
+        if (p.x < -30) p.x = innerWidth + 30;
+        if (p.x > innerWidth + 30) p.x = -30;
+        if (p.type === 0) drawPeony(p);
+        else if (p.type === 1) drawRound(p);
+        else drawRound(p);
       }
       animId = requestAnimationFrame(animate);
     };

@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import NavSidebar from "@/components/NavSidebar";
 import UserTopbar from "@/components/UserTopbar";
-import Live2DCharacter from "@/components/Live2DCharacter";
+
 import { API_BASE_URL, getSessionId } from "@/lib/api";
 
 interface Message {
@@ -21,7 +21,8 @@ export default function ChatPage() {
   const [voiceReady, setVoiceReady] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const noop = useRef(() => {}).current;
+
+
 
   // 客户端初始化：读取 localStorage、创建音频、解锁自动播放
   useEffect(() => {
@@ -229,11 +230,23 @@ export default function ChatPage() {
                 background: "radial-gradient(ellipse at center, rgba(52,211,153,0.08) 0%, transparent 70%)",
                 padding: 40, borderRadius: 24,
               }}>
-                <div style={{ width: 220, height: 320, margin: "0 auto", position: "relative" }}>
-                  <Live2DCharacter onCharacterClick={noop} />
+                <div style={{ width: 200, height: 200, margin: "0 auto", position: "relative" }}>
+                  <svg viewBox="0 0 120 120" fill="none" style={{ width: "100%", height: "100%" }}>
+                    {/* 牡丹花图标 — 中国风 */}
+                    <circle cx="60" cy="60" r="50" fill="#2d1b3d" stroke="#C12C3C" strokeWidth="2"/>
+                    {[0, 60, 120, 180, 240, 300].map((angle, i) => (
+                      <g key={i} transform={`rotate(${angle} 60 60)`}>
+                        <ellipse cx="60" cy="25" rx="8" ry="18" fill="#E84855" opacity="0.7" transform="rotate(-20 60 25)" />
+                        <ellipse cx="60" cy="25" rx="8" ry="18" fill="#DC143C" opacity="0.5" transform="rotate(15 60 25)" />
+                      </g>
+                    ))}
+                    <circle cx="60" cy="60" r="12" fill="#FFE4B5" opacity="0.8" />
+                    <circle cx="60" cy="60" r="6" fill="#FFD700" opacity="0.6" />
+                    <text x="60" y="105" textAnchor="middle" fill="#DB7093" fontSize="11" fontWeight="bold">小映</text>
+                  </svg>
                 </div>
                 <p style={{ marginTop: 16, color: "var(--text-secondary)", fontSize: 13 }}>
-                  {speaking ? "小映正在说话..." : loading ? "小映思考中..." : "点击右上角 × 不会影响我哦"}
+                  {speaking ? "小映正在说话..." : loading ? "小映思考中..." : "我是你的知识助手，有问题随时问我"}
                 </p>
               </div>
             </div>

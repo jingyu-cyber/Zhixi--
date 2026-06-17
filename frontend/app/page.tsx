@@ -18,29 +18,57 @@ export default function Home() {
   const [sessionExpiredMsg, setSessionExpiredMsg] = useState("");
 
   useEffect(() => {
-    // Check if redirected due to session expiry
-    if (typeof window !== "undefined" && sessionStorage.getItem("bilimind_session_expired") === "1") {
-      sessionStorage.removeItem("bilimind_session_expired");
-      setSessionExpiredMsg("会话已过期，请重新登录");
-    }
-    const { sessionId, userName } = readAuthSession();
-    if (sessionId && userName) {
-      // 如果是从内部页面点击导航来的，不自动跳转，允许查看首页
-      const referrer = typeof document !== "undefined" ? document.referrer : "";
-      const isInternalNav = referrer && new URL(referrer).host === window.location.host;
-      if (isInternalNav) {
-        setChecking(false);
-      } else {
-        router.replace("/workspace");
+    const init = async () => {
+      // Check if redirected due to session expiry
+      if (typeof window !== "undefined" && sessionStorage.getItem("bilimind_session_expired") === "1") {
+        sessionStorage.removeItem("bilimind_session_expired");
+        setSessionExpiredMsg("会话已过期，请重新登录");
       }
-    } else {
+      const { sessionId, userName } = readAuthSession();
+      if (sessionId && userName) {
+        // Verify session is still valid on backend
+        try {
+          const res = await authApi.getSession(sessionId);
+          if (res.valid) {
+            // Session valid - auto redirect
+            const referrer = typeof document !== "undefined" ? document.referrer : "";
+            const isInternalNav = referrer && new URL(referrer).host === window.location.host;
+            if (isInternalNav) {
+              setChecking(false);
+            } else {
+              router.replace("/workspace");
+            }
+            return;
+          }
+        } catch {
+          // Session invalid, try demo auto-login if remember_me was set
+        }
+        // Session expired - try auto demo login
+        const rememberMe = typeof window !== "undefined" ? localStorage.getItem("bilimind_remember") : null;
+        if (rememberMe === "1") {
+          try {
+            const res = await authApi.loginAsDemo();
+            setAuthSession(res.session_id, res.user_info.uname);
+            localStorage.setItem("bilimind_remember", "1");
+            router.replace("/workspace");
+            return;
+          } catch {
+            // Demo login failed, show home page
+          }
+        }
+      }
       setChecking(false);
-    }
+    };
+    init();
   }, [router]);
 
   const onLogin = (sid: string, info: UserInfo) => {
     setShowLogin(false);
     setAuthSession(sid, info.uname);
+    // 记住登录状态
+    if (typeof window !== "undefined") {
+      localStorage.setItem("bilimind_remember", "1");
+    }
     router.push("/workspace");
   };
 
@@ -50,6 +78,10 @@ export default function Home() {
     try {
       const res = await authApi.loginAsDemo();
       setAuthSession(res.session_id, res.user_info.uname);
+      // 记住登录状态
+      if (typeof window !== "undefined") {
+        localStorage.setItem("bilimind_remember", "1");
+      }
       router.push("/workspace");
     } catch (e: any) {
       setDemoLoading(false);

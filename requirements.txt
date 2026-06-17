@@ -29,5 +29,11 @@ python-dotenv==1.0.1
 # Logging
 loguru==0.7.2
 
+# Knowledge graph library
+networkx>=3.2
+
+# TTS (Text-to-Speech)
+edge_tts>=7.0.0
+
 # System dependency (required for ASR local fallback)
 # ffmpeg (install separately and add to PATH)

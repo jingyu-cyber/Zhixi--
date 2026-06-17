@@ -58,7 +58,11 @@ logs/
 
 # Node
 node_modules/
-package-lock.json
-frontend/package-lock.json
 frontend/.next/
 .next/
+
+# Workspace clutter
+Bilimind-main-v2/
+bilimind-workspace/
+mcp/
+debug-screenshots/

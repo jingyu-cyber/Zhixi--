@@ -40,7 +40,7 @@ export default function WorkspacePage() {
   const { sessionId, scopeKey } = useAuthSession();
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [selectedBvid, setSelectedBvid] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<TabKey>("timeline");
+  const [activeTab, setActiveTab] = useState<TabKey>("video");
   const [compileResult, setCompileResult] = useState<CompileResult | null>(null);
   const [compiling, setCompiling] = useState<string | null>(null);
   const [compileProgress, setCompileProgress] = useState(0);
@@ -249,6 +249,7 @@ export default function WorkspacePage() {
   };
 
   const tabs: { key: TabKey; label: string }[] = [
+    { key: "video", label: "视频" },
     { key: "timeline", label: "时间轴" },
     { key: "map", label: "知识图" },
     { key: "claims", label: "论断" },
@@ -447,6 +448,10 @@ export default function WorkspacePage() {
                       在左侧视频列表中选择视频，编译后查看知识结构
                     </p>
                   </div>
+                ) : activeTab === "video" && selectedBvid ? (
+                  <div style={{ padding: 16 }}>
+                    <VideoPlayer bvid={selectedBvid} title={videos.find(v => v.bvid === selectedBvid)?.title} />
+                  </div>
                 ) : !compileResult || ((compileResult.stats?.concept_count ?? 0) === 0 && (compileResult.timeline?.length ?? 0) === 0) ? (
                   <div className="center-placeholder">
                     <div className="placeholder-illustration">
@@ -470,11 +475,6 @@ export default function WorkspacePage() {
                   </div>
                 ) : (
                   <>
-                    {activeTab === "video" && selectedBvid && (
-                      <div style={{ padding: 16 }}>
-                        <VideoPlayer bvid={selectedBvid} title={videos.find(v => v.bvid === selectedBvid)?.title} />
-                      </div>
-                    )}
                     {activeTab === "timeline" && (
                       <KnowledgeTimeline
                         timeline={compileResult.timeline}

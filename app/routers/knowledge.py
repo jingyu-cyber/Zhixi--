@@ -722,7 +722,8 @@ async def _build_knowledge_base_task(
             await bili.close()
 
     except Exception as e:
-        logger.error(f"构建任务失败: {e}")
+        import traceback
+        logger.error(f"构建任务失败: {e}\n{traceback.format_exc()}")
         build_tasks[task_id]["status"] = "failed"
         build_tasks[task_id]["message"] = str(e)
 

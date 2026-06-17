@@ -69,7 +69,7 @@ function LearningPathContent() {
     setError("");
     setPath(null);
     try {
-      const result = await learningPathApi.generate({ target: t, mode });
+      const result = await learningPathApi.aiGenerate({ topic: t, mode });
       setPath(result);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "生成路径失败，请检查是否配置了 DashScope API Key");
@@ -193,54 +193,50 @@ function LearningPathContent() {
               </div>
             )}
 
-            {/* 路径结果：左右分栏 */}
+            {/* 路径结果 */}
             {path && (
               <div className="learning-path-result">
                 <div className="path-result-header">
-                  <h3>学习路径: {path.target.name}</h3>
-                  <span className={`node-type-badge badge-${path.target.node_type}`}>{path.target.node_type}</span>
+                  <h3>📚 学习路径: {path.target?.name || path.target}</h3>
                   <span style={{ color: "var(--text-secondary)", fontSize: 13 }}>
-                    {path.total_steps} 步 · {path.estimated_videos} 个视频 · {mode === "beginner" ? "入门" : mode === "quick" ? "快速" : "标准"}模式
+                    {path.total_steps} 步 · {path.estimated_videos ?? 0} 个视频 · {mode === "beginner" ? "入门" : mode === "quick" ? "快速" : "标准"}模式
+                    {path.source === "ai_conceptual" && " · AI 生成"}
                   </span>
                 </div>
 
-                {path.summary && (
+                {path.summary && typeof path.summary === "string" ? (
+                  <div className="path-explanation" style={{ background: "rgba(5,150,105,0.04)", padding: 12, borderRadius: 8, fontSize: 13, marginBottom: 16 }}>
+                    📝 {path.summary}
+                  </div>
+                ) : path.summary ? (
                   <div className="path-metrics-grid">
                     <div className="path-metric-card">
                       <span className="path-metric-label">路径模式</span>
                       <strong>{path.summary.mode_label}</strong>
                     </div>
                     <div className="path-metric-card">
-                      <span className="path-metric-label">平均路径优先级</span>
-                      <strong>{path.summary.avg_priority_score.toFixed(2)}</strong>
+                      <span className="path-metric-label">平均优先级</span>
+                      <strong>{path.summary.avg_priority_score?.toFixed(2) ?? "-"}</strong>
                     </div>
-                    <div className="path-metric-card">
-                      <span className="path-metric-label">平均证据支撑</span>
-                      <strong>{(path.summary.avg_evidence_score ?? path.summary.avg_support_score).toFixed(2)}</strong>
-                    </div>
-                    <div className="path-metric-card">
-                      <span className="path-metric-label">直接前置节点</span>
-                      <strong>{path.summary.direct_prerequisites}</strong>
-                    </div>
+                  </div>
+                ) : null}
+
+                {(!path.summary || typeof path.summary === "string") && (
+                  <div className="path-explanation" style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16 }}>
+                    从基础概念出发，逐步递进到「{path.target?.name || query}」。每一步都标注了推荐理由。
                   </div>
                 )}
 
-                <div className="path-explanation">
-                  该路径从基础概念出发，逐步递进到目标知识点「{path.target.name}」。
-                  每一步都标注了推荐理由和关联视频，展开步骤可查看对应的视频片段。
-                </div>
-
                 <div className="path-split-view">
-                  {/* 左侧：步骤卡片 */}
                   <div className="path-steps-panel">
                     <div className="path-steps">
                       {path.steps.map((step, i) => (
                         <PathStepCard
-                          key={step.node_id}
+                          key={step.node_id ?? step.step ?? i}
                           step={step}
                           isLast={i === path.steps.length - 1}
-                          isFocused={focusedStepId === step.node_id}
-                          onFocus={() => setFocusedStepId(step.node_id)}
+                          isFocused={focusedStepId === (step.node_id ?? step.step)}
+                          onFocus={() => setFocusedStepId(step.node_id ?? step.step ?? null)}
                         />
                       ))}
                     </div>
@@ -267,6 +263,17 @@ function LearningPathContent() {
 function PathStepCard({ step, isLast, isFocused, onFocus }: { step: LearningPathStep; isLast: boolean; isFocused?: boolean; onFocus?: () => void }) {
   const [expanded, setExpanded] = useState(false);
 
+  // 兼容 graph-based 和 AI-generated 两种格式
+  const order = step.step ?? step.order ?? 0;
+  const name = step.title ?? step.name ?? "";
+  const desc = step.description ?? step.definition ?? "";
+  const reason = step.reason ?? "";
+  const difficulty = step.difficulty ?? 1;
+  const nodeId = step.node_id;
+  const nodeType = step.node_type ?? "concept";
+  const vidCount = step.video_count ?? (step.video ? 1 : 0);
+  const isAI = !!step.title;
+
   return (
     <div className={`path-step${step.is_optional ? " path-step-optional" : ""}${isFocused ? " path-step-focused" : ""}`}>
       <div className="path-step-connector">
@@ -275,38 +282,39 @@ function PathStepCard({ step, isLast, isFocused, onFocus }: { step: LearningPath
       </div>
       <div className="path-step-content" onClick={() => onFocus?.()}>
         <div className="path-step-header" onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); onFocus?.(); }}>
-          <span className="path-step-order">{step.order}</span>
-          <span className={`node-type-badge badge-${step.node_type}`}>{step.node_type}</span>
-          <Link href={`/node/${step.node_id}`} className="path-step-name" onClick={(e) => e.stopPropagation()}>
-            {step.name}
-          </Link>
-          <span className="node-stars">{"●".repeat(step.difficulty)}</span>
-          {step.is_optional && <span className="path-optional-badge">可选</span>}
-          {step.video_count > 0 && <span className="node-meta">{step.video_count} 视频</span>}
+          <span className="path-step-order">{order}</span>
+          <span className="node-stars" title={`难度: ${difficulty}/5`}>{"●".repeat(difficulty)}{"○".repeat(5 - difficulty)}</span>
+          {nodeId ? (
+            <Link href={`/node/${nodeId}`} className="path-step-name" onClick={(e) => e.stopPropagation()}>
+              {name}
+            </Link>
+          ) : (
+            <span className="path-step-name" style={{ fontWeight: 600 }}>{name}</span>
+          )}
+          {vidCount > 0 && <span className="node-meta">{vidCount} 视频</span>}
           <span className="path-expand">{expanded ? "▲" : "▼"}</span>
         </div>
 
-        <p className="path-step-reason">{step.reason}</p>
+        <p className="path-step-reason" style={{ color: "var(--text-secondary)", fontSize: 13, marginTop: 4 }}>💡 {reason}</p>
 
-        <div className="path-step-metrics">
-          <span className="node-meta">路径分 {step.composite_score.toFixed(2)}</span>
-          <span className="node-meta">支撑 {step.evidence_score.toFixed(2)}</span>
-          <span className="node-meta">层级 {step.dependency_depth}</span>
-          <span className={`path-support-badge support-${step.support_label}`}>
-            {step.support_label === "strong" ? "证据强" : step.support_label === "medium" ? "证据中" : "证据弱"}
-          </span>
-        </div>
+        {desc && <p className="path-step-definition" style={{ fontSize: 13, marginTop: 4, color: "var(--text-tertiary)" }}>📖 {desc}</p>}
 
-        {step.reason_tags && step.reason_tags.length > 0 && (
-          <div className="path-step-tags">
-            {step.reason_tags.map((tag) => (
-              <span key={tag} className="path-reason-chip">{tag}</span>
-            ))}
+        {/* AI-generated video link */}
+        {step.video && (
+          <div className="path-step-videos" style={{ marginTop: 8 }}>
+            <a
+              href={step.video.url || `https://www.bilibili.com/video/${step.video.bvid}`}
+              target="_blank" rel="noopener noreferrer"
+              className="jump-bilibili-btn"
+              style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px",
+                background: "rgba(5,150,105,0.08)", borderRadius: 6, fontSize: 12, color: "var(--link)", textDecoration: "none" }}
+            >
+              ▶ {step.video.title}
+            </a>
           </div>
         )}
 
-        {step.definition && <p className="path-step-definition">{step.definition}</p>}
-
+        {/* Graph-based videos */}
         {expanded && step.videos && step.videos.length > 0 && (
           <div className="path-step-videos">
             {step.videos.map((v) => (

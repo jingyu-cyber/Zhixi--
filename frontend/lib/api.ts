@@ -578,32 +578,43 @@ export const treeApi = {
 // ==================== 学习路径类型 ====================
 
 export interface LearningPathStep {
-    order: number;
-    node_id: number;
-    name: string;
-    node_type: string;
-    difficulty: number;
+    // Graph-based fields
+    order?: number;
+    node_id?: number;
+    name?: string;
+    node_type?: string;
+    difficulty?: number;
     definition?: string;
-    confidence: number;
-    reason: string;
-    is_optional: boolean;
-    has_videos: boolean;
-    priority_score: number;
-    support_score: number;
-    dependency_depth: number;
-    dependency_role: string;
-    reason_tags: string[];
-    video_count: number;
-    segment_count: number;
-    evidence_score: number;
-    composite_score: number;
-    support_label: "strong" | "medium" | "weak";
-    videos: Array<{
+    confidence?: number;
+    reason?: string;
+    is_optional?: boolean;
+    has_videos?: boolean;
+    priority_score?: number;
+    support_score?: number;
+    dependency_depth?: number;
+    dependency_role?: string;
+    reason_tags?: string[];
+    video_count?: number;
+    segment_count?: number;
+    evidence_score?: number;
+    composite_score?: number;
+    support_label?: "strong" | "medium" | "weak";
+    videos?: Array<{
         bvid: string;
         title: string;
         url: string;
         segments: Array<{ time_label: string; url?: string }>;
     }>;
+    // AI-generated fields
+    step?: number;
+    title?: string;
+    description?: string;
+    video?: {
+        bvid: string;
+        title: string;
+        start_time?: number;
+        url?: string;
+    } | null;
 }
 
 export interface LearningPathResponse {
@@ -903,5 +914,18 @@ export const learningPathApi = {
         if (sid) params.set("session_id", sid);
         params.set("limit", String(limit));
         return request<PopularTopic[]>(`/learning-path/topics?${params.toString()}`);
+    },
+
+    // AI 驱动生成学习路径（从视频内容分析编排）
+    aiGenerate: (opts: { topic: string; mode?: string }) => {
+        const sid = getSessionId();
+        return request<LearningPathResponse>(`/learning-path/ai-generate`, {
+            method: "POST",
+            body: JSON.stringify({
+                topic: opts.topic,
+                session_id: sid,
+                mode: opts.mode || "standard",
+            }),
+        });
     },
 };

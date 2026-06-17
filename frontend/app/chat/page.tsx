@@ -218,7 +218,7 @@ export default function ChatPage() {
         <div className="app-with-nav">
           <NavSidebar />
           <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-            {/* 左侧：Live2D 看板娘展示区 */}
+            {/* 左侧：AI 助手展示区 */}
             <div style={{
               width: "40%", minWidth: 280, maxWidth: 420,
               display: "flex", alignItems: "center", justifyContent: "center",
@@ -259,8 +259,8 @@ export default function ChatPage() {
               }}>
                 {messages.length === 0 && (
                   <div style={{ textAlign: "center", padding: "40px 0", color: "var(--text-tertiary)" }}>
-                    <div style={{ fontSize: 48, marginBottom: 12 }}>🌸</div>
-                    <p style={{ fontSize: 16, fontWeight: 600, color: "var(--ink)", marginBottom: 4 }}>こんにちは！我是小映</p>
+                    <div style={{ fontSize: 48, marginBottom: 12 }}>🏵️</div>
+                    <p style={{ fontSize: 16, fontWeight: 600, color: "var(--ink)", marginBottom: 4 }}>你好！我是小映</p>
                     <p style={{ fontSize: 13, marginBottom: 16 }}>你的私人 AI 知识助手，随时问我收藏视频的任何问题~</p>
                     <div style={{ display: "grid", gap: 6, maxWidth: 320, margin: "0 auto" }}>
                       {[

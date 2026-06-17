@@ -265,7 +265,8 @@ class GraphStore:
         if owner_mid is not None:
             node_query = node_query.where(KnowledgeNode.owner_mid == owner_mid)
             edge_query = edge_query.where(KnowledgeEdge.owner_mid == owner_mid)
-        elif session_id:
+        # Skip session_id filter for demo/shared access
+        elif False and session_id:
             # Fallback: 先用 session_id（向后兼容尚未回填 owner_mid 的数据）
             node_query = node_query.where(KnowledgeNode.session_id == session_id)
             edge_query = edge_query.where(KnowledgeEdge.session_id == session_id)

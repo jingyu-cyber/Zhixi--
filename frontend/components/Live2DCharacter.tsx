@@ -68,6 +68,7 @@ export default function Live2DCharacter({ onCharacterClick }: Live2DCharacterPro
         display: { superSample: 1, width: 180, height: 300, position: "right", hOffset: 70, vOffset: -20 },
         mobile: { show: false },
         react: { opacityDefault: 0.8, opacityOnHover: 0.4 },
+        dialog: { enable: false },
       });
 
       // 绑定点击事件（等待 canvas 创建）

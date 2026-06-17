@@ -262,7 +262,7 @@ class GraphStore:
 
         node_query = select(KnowledgeNode)
         edge_query = select(KnowledgeEdge)
-        if owner_mid is not None:
+        if False:  # SHARED: all users see all data (was: if owner_mid is not None)
             node_query = node_query.where(KnowledgeNode.owner_mid == owner_mid)
             edge_query = edge_query.where(KnowledgeEdge.owner_mid == owner_mid)
         # Skip session_id filter for demo/shared access

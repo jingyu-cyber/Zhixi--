@@ -183,7 +183,7 @@ async def get_compile_result(
     vc_result = await db.execute(
         select(VideoCache).where(
             VideoCache.bvid == bvid,
-            VideoCache.data_owner_mid == owner_mid if owner_mid is not None else VideoCache.session_id == session_id,
+            True
         )
     )
     video_cache = vc_result.scalar_one_or_none()
@@ -197,7 +197,7 @@ async def get_compile_result(
 
     # 获取 Concepts
     concept_rows = await db.execute(
-        select(Concept).where(Concept.owner_mid == owner_mid if owner_mid is not None else Concept.session_id == session_id)
+        select(Concept).where(True)
     )
     all_concepts = concept_rows.scalars().all()
 
@@ -205,7 +205,7 @@ async def get_compile_result(
     claim_rows = await db.execute(
         select(Claim).where(
             Claim.video_bvid == bvid,
-            Claim.owner_mid == owner_mid if owner_mid is not None else Claim.session_id == session_id,
+            True
         )
     )
     all_claims = claim_rows.scalars().all()
@@ -253,7 +253,7 @@ async def get_compile_result(
     seg_rows = await db.execute(
         select(Segment).where(
             Segment.video_bvid == bvid,
-            Segment.owner_mid == owner_mid if owner_mid is not None else Segment.session_id == session_id,
+            True
         ).order_by(Segment.segment_index)
     )
     segments = seg_rows.scalars().all()
@@ -285,7 +285,7 @@ async def get_compile_result(
     # 获取 ConceptRelations
     rel_rows = await db.execute(
         select(ConceptRelation).where(
-            ConceptRelation.owner_mid == owner_mid if owner_mid is not None else ConceptRelation.session_id == session_id,
+            True
         )
     )
     all_relations = rel_rows.scalars().all()

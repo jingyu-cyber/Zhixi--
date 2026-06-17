@@ -137,7 +137,7 @@ def _compile_segment_rules(
     zh_quoted = re.findall(r"[「“《](.+?)[」”》]", text)
     # "XX是/指/即 XX" 模式
     zh_def_patterns = re.findall(
-        r"([一-鿿《-zA-Z0-9\-]{2,20})(?:是|是指|指的是|即|也就是|简单来说|通俗来讲|换句话说|指)",
+        r"([一-鿿《a-zA-Z0-9\-]{2,20})(?:是|是指|指的是|即|也就是|简单来说|通俗来讲|换句话说|指)",
         text
     )
 

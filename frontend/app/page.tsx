@@ -25,7 +25,14 @@ export default function Home() {
     }
     const { sessionId, userName } = readAuthSession();
     if (sessionId && userName) {
-      router.replace("/workspace");
+      // 如果是从内部页面点击导航来的，不自动跳转，允许查看首页
+      const referrer = typeof document !== "undefined" ? document.referrer : "";
+      const isInternalNav = referrer && new URL(referrer).host === window.location.host;
+      if (isInternalNav) {
+        setChecking(false);
+      } else {
+        router.replace("/workspace");
+      }
     } else {
       setChecking(false);
     }

@@ -6,6 +6,7 @@ import UserTopbar from "@/components/UserTopbar";
 import KnowledgeTimeline from "@/components/KnowledgeTimeline";
 import ConceptClaimList from "@/components/ConceptClaimList";
 import EvidenceChat from "@/components/EvidenceChat";
+import VideoPlayer from "@/components/VideoPlayer";
 import {
   favoritesApi,
   compileApi,
@@ -25,7 +26,7 @@ const KnowledgeMap = dynamic(() => import("@/components/KnowledgeMap"), {
   ),
 });
 
-type TabKey = "timeline" | "map" | "claims";
+type TabKey = "video" | "timeline" | "map" | "claims";
 
 interface VideoItem {
   bvid: string;
@@ -469,6 +470,11 @@ export default function WorkspacePage() {
                   </div>
                 ) : (
                   <>
+                    {activeTab === "video" && selectedBvid && (
+                      <div style={{ padding: 16 }}>
+                        <VideoPlayer bvid={selectedBvid} title={videos.find(v => v.bvid === selectedBvid)?.title} />
+                      </div>
+                    )}
                     {activeTab === "timeline" && (
                       <KnowledgeTimeline
                         timeline={compileResult.timeline}

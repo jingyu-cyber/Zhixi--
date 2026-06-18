@@ -10,6 +10,7 @@ BiliMind 知识树学习导航系统
 """
 from typing import Optional
 import json
+import re
 from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
 from sqlalchemy import select, func, text
@@ -457,7 +458,7 @@ difficulty 范围 1-5。related_video_index 为最相关视频片段索引（-1=
             temperature=0.2, max_tokens=2000, timeout=60,
         )
         raw = response.choices[0].message.content.strip()
-        json_match = __import__('re').search(r"\{[\s\S]*\}", raw)
+        json_match = re.search(r"\{[\s\S]*\}", raw)
         if json_match:
             raw = json_match.group(0)
         data = json.loads(raw)
@@ -529,7 +530,7 @@ async def _generate_conceptual_path(topic: str, mode: str) -> dict:
             temperature=0.3, max_tokens=2000, timeout=60,
         )
         raw = response.choices[0].message.content.strip()
-        json_match = __import__('re').search(r"\{[\s\S]*\}", raw)
+        json_match = re.search(r"\{[\s\S]*\}", raw)
         if json_match:
             raw = json_match.group(0)
         data = json.loads(raw)

@@ -180,12 +180,10 @@ async def get_compile_result(
     """
     owner_mid = await _resolve_owner_mid(db, session_id) if session_id else None
     # 获取视频信息
-    vc_result = await db.execute(
-        select(VideoCache).where(
-            VideoCache.bvid == bvid,
-            True
-        )
-    )
+    vc_query = select(VideoCache).where(VideoCache.bvid == bvid)
+    if owner_mid is not None:
+        vc_query = vc_query.where(VideoCache.owner_mid == owner_mid)
+    vc_result = await db.execute(vc_query)
     video_cache = vc_result.scalar_one_or_none()
 
     # 如果 VideoCache 不存在，视频未编译 → 返回 404
@@ -196,18 +194,17 @@ async def get_compile_result(
     video_duration = video_cache.duration
 
     # 获取 Concepts
-    concept_rows = await db.execute(
-        select(Concept).where(True)
-    )
+    concept_query = select(Concept)
+    if owner_mid is not None:
+        concept_query = concept_query.where(Concept.owner_mid == owner_mid)
+    concept_rows = await db.execute(concept_query)
     all_concepts = concept_rows.scalars().all()
 
     # 获取与此视频关联的 Claims
-    claim_rows = await db.execute(
-        select(Claim).where(
-            Claim.video_bvid == bvid,
-            True
-        )
-    )
+    claim_query = select(Claim).where(Claim.video_bvid == bvid)
+    if owner_mid is not None:
+        claim_query = claim_query.where(Claim.owner_mid == owner_mid)
+    claim_rows = await db.execute(claim_query)
     all_claims = claim_rows.scalars().all()
 
     # 建立 concept_id -> claims 映射
@@ -250,12 +247,10 @@ async def get_compile_result(
         })
 
     # 获取 Segments（时间轴）
-    seg_rows = await db.execute(
-        select(Segment).where(
-            Segment.video_bvid == bvid,
-            True
-        ).order_by(Segment.segment_index)
-    )
+    seg_query = select(Segment).where(Segment.video_bvid == bvid)
+    if owner_mid is not None:
+        seg_query = seg_query.where(Segment.owner_mid == owner_mid)
+    seg_rows = await db.execute(seg_query.order_by(Segment.segment_index))
     segments = seg_rows.scalars().all()
 
     # 构建 timeline
@@ -283,11 +278,10 @@ async def get_compile_result(
         timeline.append(entry)
 
     # 获取 ConceptRelations
-    rel_rows = await db.execute(
-        select(ConceptRelation).where(
-            True
-        )
-    )
+    rel_query = select(ConceptRelation)
+    if owner_mid is not None:
+        rel_query = rel_query.where(ConceptRelation.owner_mid == owner_mid)
+    rel_rows = await db.execute(rel_query)
     all_relations = rel_rows.scalars().all()
 
     # 构建 prerequisites 响应（只包含与当前视频相关的概念）

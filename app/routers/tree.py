@@ -510,6 +510,7 @@ async def get_learning_path(
     db: AsyncSession = Depends(get_db),
 ):
     """生成学习路径推荐"""
+    owner_mid = None  # Shared knowledge base - all users see all data
     gs = await _load_graph_store(db, session_id=session_id)
 
     if not gs.has_node(node_id):

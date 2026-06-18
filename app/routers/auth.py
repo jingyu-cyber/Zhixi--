@@ -79,10 +79,11 @@ async def poll_qrcode_status(qrcode_key: str, db: AsyncSession = Depends(get_db)
             )
             
             user_info_dict = {}
+            mid = None
             try:
                 user_info = await bili_auth.get_user_info()
                 await bili_auth.close()
-                
+
                 mid = int(user_info.get("mid") or cookies.get("DedeUserID"))
                 
                 user_info_dict = {

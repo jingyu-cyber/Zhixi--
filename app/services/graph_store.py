@@ -262,14 +262,7 @@ class GraphStore:
 
         node_query = select(KnowledgeNode)
         edge_query = select(KnowledgeEdge)
-        if False:  # SHARED: all users see all data (was: if owner_mid is not None)
-            node_query = node_query.where(KnowledgeNode.owner_mid == owner_mid)
-            edge_query = edge_query.where(KnowledgeEdge.owner_mid == owner_mid)
-        # Skip session_id filter for demo/shared access
-        elif False and session_id:
-            # Fallback: 先用 session_id（向后兼容尚未回填 owner_mid 的数据）
-            node_query = node_query.where(KnowledgeNode.session_id == session_id)
-            edge_query = edge_query.where(KnowledgeEdge.session_id == session_id)
+        # SHARED: all users see all data — no owner_mid / session_id filtering
 
         nodes_result = await db.execute(node_query)
         for node in nodes_result.scalars().all():

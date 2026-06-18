@@ -224,7 +224,7 @@ def _is_summary_question(question: str) -> bool:
 def _is_general_question(question: str) -> bool:
     """通用闲聊/与收藏无关的问题"""
     general_terms = ["你好", "嗨", "哈喽", "hello", "hi", "在吗", "你是谁", "你能做什么", "谢谢", "晚安", "早安", "早上好"]
-    cleaned = re.sub(r"[\\W_]+", "", question, flags=re.UNICODE)
+    cleaned = re.sub(r"[\W_]+", "", question, flags=re.UNICODE)
     lowered = cleaned.lower()
     residual = lowered
     for term in general_terms:

@@ -94,8 +94,17 @@ async def search_segments(
 
 # ==================== 搜索实现 ====================
 
+def _is_shared_session(session_id: Optional[str]) -> bool:
+    """演示用户或未登录用户共享全部数据"""
+    if not session_id:
+        return True
+    if session_id.startswith("demo_"):
+        return True
+    return False
+
+
 async def _search_nodes(q: str, limit: int, db: AsyncSession, session_id: Optional[str] = None) -> list[dict]:
-    """关键词搜索知识节点 + 图谱名称匹配"""
+    """关键词搜索知识节点 + 图谱名称匹配（结果按 normalized_name 去重）"""
     # SQLite LIKE 搜索
     pattern = f"%{q}%"
     query = (
@@ -109,19 +118,30 @@ async def _search_nodes(q: str, limit: int, db: AsyncSession, session_id: Option
             )
         )
         .order_by(KnowledgeNode.source_count.desc())
-        .limit(limit)
+        .limit(limit * 3)  # 扩大初始抓取量，去重后再截断
     )
-    if session_id:
+    # 演示/未登录用户查看全部共享数据，已登录真实用户按 session 隔离
+    if not _is_shared_session(session_id):
         query = query.where(KnowledgeNode.session_id == session_id)
     result = await db.execute(query)
     nodes = result.scalars().all()
 
-    items = []
+    # 按 normalized_name 去重：同名节点保留 source_count 最高的
+    seen_names: dict[str, KnowledgeNode] = {}
     for n in nodes:
+        key = (n.normalized_name or n.name).strip().lower()
+        if key not in seen_names or n.source_count > (seen_names[key].source_count or 0):
+            seen_names[key] = n
+
+    # 按 source_count 排序，截断到 limit
+    deduped = sorted(seen_names.values(), key=lambda n: n.source_count or 0, reverse=True)[:limit]
+
+    items = []
+    for n in deduped:
         count_query = select(func.count(func.distinct(NodeSegmentLink.video_bvid))).where(
             NodeSegmentLink.node_id == n.id
         )
-        if session_id:
+        if not _is_shared_session(session_id):
             count_query = count_query.where(NodeSegmentLink.session_id == session_id)
         vid_count = await db.scalar(count_query)
         items.append({
@@ -151,7 +171,7 @@ async def _search_videos(q: str, limit: int, db: AsyncSession, session_id: Optio
             )
         )
     )
-    if session_id:
+    if not _is_shared_session(session_id):
         query = query.where(
             VideoCache.bvid.in_(
                 select(Segment.video_bvid).where(Segment.session_id == session_id)
@@ -166,7 +186,7 @@ async def _search_videos(q: str, limit: int, db: AsyncSession, session_id: Optio
         count_query = select(func.count(func.distinct(NodeSegmentLink.node_id))).where(
             NodeSegmentLink.video_bvid == v.bvid
         )
-        if session_id:
+        if not _is_shared_session(session_id):
             count_query = count_query.where(NodeSegmentLink.session_id == session_id)
         kn_count = await db.scalar(count_query)
         items.append({

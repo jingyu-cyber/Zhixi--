@@ -45,7 +45,14 @@ export default function VideoDetailPage() {
 
             <div className="video-header">
               {detail.pic_url && (
-                <img src={detail.pic_url} alt="" className="video-thumb" />
+                <img
+                  src={detail.pic_url}
+                  alt=""
+                  className="video-thumb"
+                  referrerPolicy="no-referrer"
+                  crossOrigin="anonymous"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
               )}
               <div className="video-info">
                 <h1>{detail.title}</h1>

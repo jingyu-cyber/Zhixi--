@@ -187,7 +187,7 @@ class TreeBuilder:
         }
 
     def _determine_topics(self, qualified: list[dict], qualified_ids: set[int]) -> list[dict]:
-        """确定一级主题"""
+        """确定一级主题（按 normalized_name 去重，每个唯一主题只保留一个节点）"""
         topics = [n for n in qualified if n.get("node_type") == "topic"]
 
         if not topics:
@@ -196,6 +196,16 @@ class TreeBuilder:
                 top = concepts[0]
                 top["node_type"] = "topic"
                 topics = [top]
+
+        # 按 normalized_name 去重：同名主题取 source_count 最高的
+        seen_names = {}
+        for topic in topics:
+            norm_name = topic.get("normalized_name", topic.get("name", "")).strip()
+            if not norm_name:
+                continue
+            if norm_name not in seen_names or topic.get("source_count", 0) > seen_names[norm_name].get("source_count", 0):
+                seen_names[norm_name] = topic
+        topics = list(seen_names.values())
 
         for topic in topics:
             children = self.graph.get_children(topic["id"])

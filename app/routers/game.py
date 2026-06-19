@@ -19,9 +19,20 @@ from app.config import settings
 router = APIRouter(prefix="/game", tags=["知识游戏"])
 
 # 每个请求创建新的图实例，从数据库加载
-async def _get_session_graph(db: AsyncSession, session_id: str) -> GraphStore:
+def _is_shared_session(session_id: Optional[str]) -> bool:
+    """演示用户或未登录用户共享全部数据"""
+    if not session_id:
+        return True
+    if session_id.startswith("demo_"):
+        return True
+    return False
+
+
+async def _get_session_graph(db: AsyncSession, session_id: Optional[str]) -> GraphStore:
     graph = GraphStore(graph_path=settings.graph_persist_path)
-    await graph.load_from_db(db, session_id=session_id)
+    # 演示/未登录用户查看全部共享知识库
+    effective_sid = None if _is_shared_session(session_id) else session_id
+    await graph.load_from_db(db, session_id=effective_sid, owner_mid=None)
     return graph
 
 # 有效关系类型

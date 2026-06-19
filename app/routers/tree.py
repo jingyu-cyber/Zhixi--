@@ -180,10 +180,24 @@ async def get_topics(
     session_id: Optional[str] = Query(None, description="会话ID，用于数据隔离"),
     db: AsyncSession = Depends(get_db),
 ):
-    """获取一级主题列表"""
+    """获取一级主题列表（去重）"""
     try:
         owner_mid = None  # Shared knowledge base - all users see all data
-        query = select(KnowledgeNode).where(KnowledgeNode.node_type == "topic")
+        # 使用子查询去重：取每个 normalized_name 中 source_count 最高的节点
+        from sqlalchemy import and_
+        subq = (
+            select(
+                KnowledgeNode.normalized_name,
+                func.max(KnowledgeNode.id).label("max_id")
+            )
+            .where(KnowledgeNode.node_type == "topic")
+            .group_by(KnowledgeNode.normalized_name)
+            .subquery()
+        )
+        query = (
+            select(KnowledgeNode)
+            .join(subq, KnowledgeNode.id == subq.c.max_id)
+        )
         if owner_mid is not None:
             query = query.where(KnowledgeNode.owner_mid == owner_mid)
         result = await db.execute(

@@ -31,10 +31,21 @@ class AiPathRequest(BaseModel):
     session_id: Optional[str] = None
     mode: str = "standard"  # beginner / standard / quick
 
+
+def _is_shared_session(session_id: Optional[str]) -> bool:
+    """演示用户或未登录用户共享全部数据"""
+    if not session_id:
+        return True
+    if session_id.startswith("demo_"):
+        return True
+    return False
+
+
 async def _load_graph_store(db: AsyncSession, session_id: Optional[str]) -> GraphStore:
     """按 session_id 加载隔离后的图谱快照，避免跨用户缓存。"""
     graph = GraphStore(graph_path=settings.graph_persist_path)
-    await graph.load_from_db(db, session_id=session_id)
+    effective_sid = None if _is_shared_session(session_id) else session_id
+    await graph.load_from_db(db, session_id=effective_sid)
     return graph
 
 
@@ -56,7 +67,7 @@ async def search_target_topics(
         .order_by(KnowledgeNode.source_count.desc())
         .limit(limit)
     )
-    if session_id:
+    if not _is_shared_session(session_id):
         stmt = stmt.where(KnowledgeNode.session_id == session_id)
     result = await db.execute(stmt)
     nodes = result.scalars().all()

@@ -3,8 +3,10 @@ BiliMind 知识树学习导航系统
 
 树构建引擎 — 从知识图谱投影为前端可展示的知识树
 支持节点质量分级（core / normal / weak）和噪声节点过滤
+支持记忆层级 (working / short_term / long_term) 和遗忘强度可视化
 """
 import re
+from datetime import datetime, timezone
 from typing import Optional
 from loguru import logger
 
@@ -16,6 +18,11 @@ from app.services.graph_store import GraphStore
 GRADE_CORE = "core"         # 核心节点：高置信度 + 多来源
 GRADE_NORMAL = "normal"     # 普通节点
 GRADE_WEAK = "weak"         # 弱关联：低置信度或单来源
+
+# 记忆层级 (用于树节点标注)
+MEMORY_LAYER_WORKING = "working"
+MEMORY_LAYER_SHORT = "short_term"
+MEMORY_LAYER_LONG = "long_term"
 
 # 噪声节点名称模式
 NOISE_PATTERNS = [
@@ -266,7 +273,13 @@ class TreeBuilder:
         return children
 
     def _make_tree_node(self, node: dict, children: list[dict], is_reference: bool = False) -> dict:
-        """创建树节点（包含质量等级）"""
+        """创建树节点（包含质量等级 + 记忆信息）"""
+        # 读取记忆相关属性 (由 MemoryStore 同步写入)
+        memory_layer = node.get("memory_layer", "short_term")
+        memory_strength_val = node.get("current_strength", node.get("base_strength", 0.5))
+        recall_count = node.get("recall_count", 0)
+        stability = node.get("stability", 1.0)
+
         return {
             "id": node["id"],
             "name": node.get("name", ""),
@@ -279,6 +292,11 @@ class TreeBuilder:
             "source_count": node.get("source_count", 1),
             "grade": node.get("_grade", GRADE_NORMAL),
             "is_reference": is_reference,
+            # 记忆系统字段
+            "memory_layer": memory_layer,
+            "memory_strength": round(memory_strength_val, 3) if memory_strength_val else 0.5,
+            "recall_count": recall_count or 0,
+            "stability": round(stability, 2) if stability else 1.0,
             "children": children,
         }
 
@@ -317,3 +335,72 @@ class TreeBuilder:
             current = parent["id"] if parent else None
 
         return path
+
+    def filter_by_memory_layer(self, tree: list[dict], layer: str) -> list[dict]:
+        """按记忆层级过滤知识树
+
+        Args:
+            tree: 完整知识树
+            layer: working / short_term / long_term
+
+        Returns:
+            过滤后的树 (保留匹配层级的节点及其父路径)
+        """
+        if not tree:
+            return []
+
+        filtered = []
+        for topic in tree:
+            matching_children = []
+            for child in topic.get("children", []):
+                if child.get("memory_layer") == layer:
+                    matching_children.append(child)
+                # 递归检查子节点
+                elif child.get("children"):
+                    sub_matches = [
+                        sub for sub in child["children"]
+                        if sub.get("memory_layer") == layer
+                    ]
+                    if sub_matches:
+                        child_copy = dict(child)
+                        child_copy["children"] = sub_matches
+                        child_copy["node_count"] = len(sub_matches)
+                        matching_children.append(child_copy)
+
+            if matching_children or topic.get("memory_layer") == layer:
+                topic_copy = dict(topic)
+                topic_copy["children"] = matching_children
+                topic_copy["node_count"] = len(matching_children)
+                filtered.append(topic_copy)
+
+        return filtered
+
+    def get_memory_summary(self, tree: list[dict]) -> dict:
+        """获取知识树的记忆状态摘要"""
+        stats = {
+            "total_nodes": 0,
+            "working": 0, "short_term": 0, "long_term": 0,
+            "avg_strength": 0.0,
+            "needs_review": 0, "strong": 0,
+        }
+
+        def _walk(nodes):
+            for n in nodes:
+                stats["total_nodes"] += 1
+                layer = n.get("memory_layer", "short_term")
+                if layer in stats:
+                    stats[layer] += 1
+                strength = n.get("memory_strength", 0.5) or 0.5
+                stats["avg_strength"] += strength
+                if strength < 0.35:
+                    stats["needs_review"] += 1
+                if strength >= 0.7:
+                    stats["strong"] += 1
+                if n.get("children"):
+                    _walk(n["children"])
+
+        _walk(tree)
+        if stats["total_nodes"] > 0:
+            stats["avg_strength"] = round(stats["avg_strength"] / stats["total_nodes"], 3)
+
+        return stats

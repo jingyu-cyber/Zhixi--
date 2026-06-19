@@ -274,6 +274,72 @@ class ConceptRelation(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+# ==================== 记忆系统模型 (Memory System) ====================
+
+class MemoryNode(Base):
+    """记忆节点表 — 核心记忆单元
+
+    基于认知科学的记忆模型:
+    - memory_type: 情节记忆(episodic) / 语义记忆(semantic) / 过程记忆(procedural)
+    - memory_layer: 工作记忆(working) / 短期记忆(short_term) / 长期记忆(long_term)
+    - Ebbinghaus 遗忘曲线参数: base_strength + stability + last_recall + recall_count
+    - 证据链: evidence_json 存储可追溯的原始来源
+    """
+    __tablename__ = 'memory_nodes'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    memory_type = Column(String(20), default='semantic', nullable=False)
+    memory_layer = Column(String(20), default='short_term', nullable=False)
+
+    name = Column(String(200), nullable=False)
+    normalized_name = Column(String(200), index=True)
+    content = Column(Text, nullable=True)           # 知识内容 (替代原 definition)
+    definition = Column(Text, nullable=True)         # 简短定义 (向后兼容)
+
+    # Ebbinghaus 遗忘曲线参数
+    base_strength = Column(Float, default=0.5)       # 初始编码强度
+    stability = Column(Float, default=1.0)           # 记忆稳定性 (越高越抗遗忘)
+    recall_count = Column(Integer, default=0)        # 被成功检索的次数
+    last_recall = Column(DateTime, nullable=True)     # 上次检索时间
+
+    # 元数据
+    confidence = Column(Float, default=0.5)           # 抽取置信度
+    source_count = Column(Integer, default=1)         # 来源数量
+    difficulty = Column(Integer, default=1)           # 1-5
+    review_status = Column(String(20), default='auto')
+
+    # 关联原始 KnowledgeNode (用于知识树记忆信息注入)
+    knowledge_node_id = Column(Integer, index=True, nullable=True)
+
+    # 合并溯源
+    merged_from_ids = Column(JSON, default=list)      # 合并来源节点ID列表
+    evidence_json = Column(JSON, default=list)        # [{"source_type","source_id","segment_id","start_time","end_time","text_snippet","confidence"}]
+
+    # 归属
+    session_id = Column(String(64), index=True, nullable=True)
+    owner_mid = Column(Integer, index=True, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MemoryEdge(Base):
+    """记忆关系表 — 记忆节点间的关联"""
+    __tablename__ = 'memory_edges'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    source_id = Column(Integer, index=True, nullable=False)
+    target_id = Column(Integer, index=True, nullable=False)
+    relation_type = Column(String(30), nullable=False)
+    weight = Column(Float, default=1.0)
+    confidence = Column(Float, default=0.5)
+    evidence_segment_id = Column(Integer, nullable=True)
+    evidence_video_bvid = Column(String(20), nullable=True)
+    session_id = Column(String(64), index=True, nullable=True)
+    owner_mid = Column(Integer, index=True, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class CrossVideoAlignment(Base):
     """跨视频对齐表 — 同一概念在不同视频中的讲法对比"""
     __tablename__ = 'cross_video_alignments'

@@ -30,6 +30,7 @@ from app.routers import compile
 from app.routers import evidence
 from app.routers import organizer
 from app.routers import tts
+from app.routers import memory
 
 
 # 配置日志
@@ -113,6 +114,7 @@ app.include_router(compile.router)
 app.include_router(evidence.router)
 app.include_router(organizer.router)
 app.include_router(tts.router)
+app.include_router(memory.router)
 
 
 @app.get("/")

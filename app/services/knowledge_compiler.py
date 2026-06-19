@@ -9,6 +9,7 @@
 import asyncio
 import json
 import re
+from datetime import datetime
 from typing import Optional
 
 from loguru import logger
@@ -919,10 +920,141 @@ async def compile_video(
         video_cache.knowledge_node_count = len(concept_map)
         await db.commit()
 
+    # Step 8: 同步 concepts 到 MemoryNode (记忆系统)
+    synced_memory_count = 0
+    synced_memory_edge_count = 0
+    from app.models import MemoryNode, MemoryEdge, KnowledgeNode as KNodeModel
+
+    for norm_name, cdata in concept_map.items():
+        # 查找对应的 KnowledgeNode ID (刚刚在 Step 7 创建/更新的)
+        kn_id = None
+        kn_result = await db.execute(
+            select(KNodeModel).where(
+                KNodeModel.normalized_name == norm_name,
+                KNodeModel.owner_mid == owner_mid,
+            )
+        )
+        kn_row = kn_result.scalar_one_or_none()
+        if kn_row:
+            kn_id = kn_row.id
+
+        # 收集证据
+        evidences = []
+        for cl in cdata.get("claims", []):
+            seg_id = None
+            for seg_rec in segment_records:
+                if seg_rec.start_time == cl.get("start_time") and seg_rec.end_time == cl.get("end_time"):
+                    seg_id = seg_rec.id
+                    break
+            evidences.append({
+                "source_type": "bilibili",
+                "source_id": bvid,
+                "source_title": video_title,
+                "segment_id": seg_id,
+                "start_time": cl.get("start_time"),
+                "end_time": cl.get("end_time"),
+                "text_snippet": (cl.get("raw_text", "") or "")[:500],
+                "confidence": cl.get("confidence", 0.5),
+            })
+
+        # 确定记忆类型
+        memory_type = "episodic" if cdata["source_count"] <= 1 else "semantic"
+
+        existing_mem = await db.execute(
+            select(MemoryNode).where(
+                MemoryNode.normalized_name == norm_name,
+                MemoryNode.owner_mid == owner_mid,
+            )
+        )
+        mem = existing_mem.scalar_one_or_none()
+
+        if mem:
+            mem.source_count = max(mem.source_count or 1, cdata["source_count"])
+            mem.confidence = max(mem.confidence or 0.5, 0.5)
+            # 多源 → 升级为语义记忆
+            if mem.source_count >= 2:
+                mem.memory_type = "semantic"
+            # 合并证据列表 (去重)
+            existing_evs = list(mem.evidence_json or [])
+            existing_sources = {(e.get("source_id"), e.get("segment_id")) for e in existing_evs}
+            for ev in evidences:
+                key = (ev.get("source_id"), ev.get("segment_id"))
+                if key not in existing_sources:
+                    existing_evs.append(ev)
+                    existing_sources.add(key)
+            mem.evidence_json = existing_evs
+            if cdata["definition"] and not mem.definition:
+                mem.definition = cdata["definition"]
+            mem.updated_at = datetime.utcnow()
+        else:
+            mem = MemoryNode(
+                memory_type=memory_type,
+                memory_layer="short_term",
+                name=cdata["name"],
+                normalized_name=norm_name,
+                definition=cdata["definition"],
+                content=cdata["definition"],
+                base_strength=cdata.get("confidence", 0.5) or 0.5,
+                stability=1.0,
+                recall_count=0,
+                confidence=cdata.get("confidence", 0.5) or 0.5,
+                source_count=cdata["source_count"],
+                difficulty=cdata.get("difficulty", 1),
+                knowledge_node_id=kn_id,
+                evidence_json=evidences,
+                session_id=session_id,
+                owner_mid=owner_mid,
+            )
+            db.add(mem)
+            await db.flush()
+        synced_memory_count += 1
+
+    # 同步记忆关系
+    for src_norm, tgt_norm in prerequisite_pairs:
+        src_mem = await db.execute(
+            select(MemoryNode).where(
+                MemoryNode.normalized_name == src_norm,
+                MemoryNode.owner_mid == owner_mid,
+            )
+        )
+        tgt_mem = await db.execute(
+            select(MemoryNode).where(
+                MemoryNode.normalized_name == tgt_norm,
+                MemoryNode.owner_mid == owner_mid,
+            )
+        )
+        src_m = src_mem.scalar_one_or_none()
+        tgt_m = tgt_mem.scalar_one_or_none()
+        if src_m and tgt_m and src_m.id != tgt_m.id:
+            from sqlalchemy import select as sa_select
+            existing_me = await db.execute(
+                sa_select(MemoryEdge).where(
+                    MemoryEdge.source_id == src_m.id,
+                    MemoryEdge.target_id == tgt_m.id,
+                    MemoryEdge.relation_type == "prerequisite_of",
+                )
+            )
+            if not existing_me.scalar_one_or_none():
+                me = MemoryEdge(
+                    source_id=src_m.id,
+                    target_id=tgt_m.id,
+                    relation_type="prerequisite_of",
+                    weight=1.0,
+                    confidence=0.6,
+                    evidence_video_bvid=bvid,
+                    session_id=session_id,
+                    owner_mid=owner_mid,
+                )
+                db.add(me)
+                synced_memory_edge_count += 1
+
+    await db.commit()
+
     logger.info(
         f"[{bvid}] 知识编译完成: "
         f"{len(concept_map)} 概念, {total_claims} 论断, "
-        f"{peak_count} 峰值片段"
+        f"{peak_count} 峰值片段, "
+        f"同步 {synced_memory_count} MemoryNode, {synced_memory_edge_count} MemoryEdge"
     )
 
     return {
@@ -931,4 +1063,5 @@ async def compile_video(
         "claim_count": total_claims,
         "peak_count": peak_count,
         "segment_count": len(segment_records),
+        "memory_nodes_synced": synced_memory_count,
     }

@@ -363,6 +363,11 @@ export interface TreeNode {
     node_count: number;
     confidence: number;
     is_reference: boolean;
+    // 记忆系统字段
+    memory_layer?: "working" | "short_term" | "long_term";
+    memory_strength?: number;
+    recall_count?: number;
+    stability?: number;
     children: TreeNode[];
 }
 
@@ -870,7 +875,155 @@ export const organizerApi = {
   },
 };
 
-// ==================== 学习路径独立 API ====================
+// ==================== 记忆系统类型 ====================
+
+export interface MemoryStats {
+    total_nodes: number;
+    working_count: number;
+    short_term_count: number;
+    long_term_count: number;
+    episodic_count: number;
+    semantic_count: number;
+    procedural_count: number;
+    total_evidences: number;
+    avg_strength_working: number;
+    avg_strength_short_term: number;
+    avg_strength_long_term: number;
+}
+
+export interface MemoryRetrievalResult {
+    node_id: number;
+    name: string;
+    content: string;
+    memory_type: string;
+    memory_layer: string;
+    strength: number;
+    relevance_score: number;
+    context_boost: number;
+    freshness_boost: number;
+    evidence_count: number;
+    evidences: Array<{
+        source_type: string;
+        source_id: string;
+        source_title: string;
+        segment_id?: number;
+        start_time?: number;
+        end_time?: number;
+        text_snippet: string;
+        confidence: number;
+    }>;
+}
+
+export interface MemorySearchResponse {
+    query: string;
+    results: MemoryRetrievalResult[];
+    total_found: number;
+    retrieval_time_ms: number;
+}
+
+export interface MemoryDecayCheck {
+    total: number;
+    forgotten_count: number;
+    needs_review_count: number;
+    stable_count: number;
+    forgotten: Array<{ id: number; name: string; strength: number }>;
+    needs_review: Array<{ id: number; name: string; strength: number }>;
+}
+
+export interface TreeMemorySummary {
+    tree_stats: {
+        total_topics: number;
+        total_nodes: number;
+        total_edges: number;
+        low_confidence_count: number;
+    };
+    memory_summary: {
+        total_nodes: number;
+        working: number;
+        short_term: number;
+        long_term: number;
+        avg_strength: number;
+        needs_review: number;
+        strong: number;
+    };
+}
+
+// ==================== 记忆系统 API ====================
+
+export const memoryApi = {
+    getStats: (ownerMid?: number) => {
+        const params = new URLSearchParams();
+        if (ownerMid) params.set("owner_mid", String(ownerMid));
+        return request<MemoryStats>(`/api/memory/stats?${params.toString()}`);
+    },
+
+    search: (opts: {
+        query: string;
+        top_k?: number;
+        context_node_ids?: number[];
+        min_strength?: number;
+        include_evidences?: boolean;
+    }) => {
+        const params = new URLSearchParams();
+        const sid = getSessionId();
+        if (sid) params.set("owner_mid", sid);
+        return request<MemorySearchResponse>("/api/memory/search", {
+            method: "POST",
+            body: JSON.stringify({
+                query: opts.query,
+                top_k: opts.top_k ?? 10,
+                context_node_ids: opts.context_node_ids ?? [],
+                min_strength: opts.min_strength ?? 0.2,
+                include_evidences: opts.include_evidences ?? true,
+            }),
+        });
+    },
+
+    recordRecall: (nodeId: number) =>
+        request<{ node_id: number; new_strength: number; message: string }>(
+            `/api/memory/recall/${nodeId}`, { method: "POST" }
+        ),
+
+    checkDecay: () => {
+        const params = new URLSearchParams();
+        const sid = getSessionId();
+        if (sid) params.set("owner_mid", sid);
+        return request<MemoryDecayCheck>(`/api/memory/decay-check?${params.toString()}`, {
+            method: "POST",
+        });
+    },
+
+    syncFromKnowledge: () => {
+        const params = new URLSearchParams();
+        const sid = getSessionId();
+        if (sid) params.set("owner_mid", sid);
+        return request<{ message: string; created: number; skipped: number }>(
+            `/api/memory/sync-from-knowledge?${params.toString()}`, { method: "POST" }
+        );
+    },
+};
+
+// 知识树记忆相关 API (扩展 treeApi)
+export const treeMemoryApi = {
+    getTreeByMemoryLayer: (layer: "working" | "short_term" | "long_term", opts?: {
+        minConfidence?: number;
+        sessionId?: string | null;
+    }) => {
+        const params = new URLSearchParams({ layer });
+        const sid = opts?.sessionId ?? getSessionId();
+        if (sid) params.set("session_id", sid);
+        if (opts?.minConfidence) params.set("min_confidence", String(opts.minConfidence));
+        return request<TreeResponse>(`/tree/memory-layer?${params.toString()}`);
+    },
+
+    getMemorySummary: (opts?: { minConfidence?: number; sessionId?: string | null }) => {
+        const params = new URLSearchParams();
+        const sid = opts?.sessionId ?? getSessionId();
+        if (sid) params.set("session_id", sid);
+        if (opts?.minConfidence) params.set("min_confidence", String(opts.minConfidence));
+        return request<TreeMemorySummary>(`/tree/memory-summary?${params.toString()}`);
+    },
+};
 
 export interface PopularTopic {
     id: number;

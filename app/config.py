@@ -66,6 +66,15 @@ class Settings(BaseSettings):
     evidence_ranker_enabled: bool = Field(default=True, env="EVIDENCE_RANKER_ENABLED")
     organizer_classifier_enabled: bool = Field(default=True, env="ORGANIZER_CLASSIFIER_ENABLED")
 
+    # 记忆系统 (Memory System)
+    memory_short_term_hours: float = Field(default=24.0, env="MEMORY_SHORT_TERM_HOURS")
+    memory_consolidation_threshold: int = Field(default=3, env="MEMORY_CONSOLIDATION_THRESHOLD")
+    memory_working_capacity: int = Field(default=7, env="MEMORY_WORKING_CAPACITY")
+    memory_decay_base_rate: float = Field(default=0.15, env="MEMORY_DECAY_BASE_RATE")
+    memory_semantic_merge_threshold: float = Field(default=0.82, env="MEMORY_SEMANTIC_MERGE_THRESHOLD")
+    memory_conflict_threshold: float = Field(default=0.65, env="MEMORY_CONFLICT_THRESHOLD")
+    memory_ebbinghaus_enabled: bool = Field(default=True, env="MEMORY_EBBINGHAUS_ENABLED")
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

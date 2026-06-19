@@ -811,8 +811,9 @@ class VideoOrganizerService:
                 "duration": vc.duration or 0 if vc else 0,
                 "pic_url": vc.pic_url if vc else None,
                 "folder_names": ["知识图谱"],
+                "folder_titles": ["知识图谱"],
                 "folder_ids": [],
-                "segment_count": 0,
+                "segment_count": 1,
                 "claim_count": 0,
                 "node_count": 1,
                 "knowledge_node_count": 1,
@@ -824,9 +825,12 @@ class VideoOrganizerService:
                 "subject_tags": [],
                 "difficulty_level": [],
                 "learning_status": "可复习",
+                "confidence": 0.6,
+                "is_core": True,
+                "duplicate_candidates": [],
             })
 
-        compiled_count = sum(1 for v in videos if v["knowledge_node_count"] > 0)
+        compiled_count = len(videos)
         summary = {
             "total_videos": len(videos),
             "series_count": 0,
@@ -842,7 +846,13 @@ class VideoOrganizerService:
             "series_groups": [],
             "duplicate_groups": [],
             "suggestions": [
-                {"type": "info", "message": "当前基于知识图谱数据生成。同步B站收藏夹后可获得完整的收藏整理分析。"}
+                {
+                    "type": "info",
+                    "title": "知识图谱模式",
+                    "confidence": 0.8,
+                    "description": "当前基于知识图谱数据生成。同步B站收藏夹后可获得完整的收藏整理分析。",
+                    "evidence": ["基于已编译的知识图谱数据", f"涵盖 {len(videos)} 个视频的知识点"],
+                }
             ],
             "facet_counts": {},
             "export_generated_at": datetime.utcnow().isoformat(),

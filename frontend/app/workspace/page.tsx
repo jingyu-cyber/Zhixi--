@@ -65,6 +65,13 @@ export default function WorkspacePage() {
     setLoadingVideos(!!sessionId);
   }, [sessionId, scopeKey]);
 
+  // 请求浏览器通知权限
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, []);
+
   // Load videos from favorites
   useEffect(() => {
     if (!sessionId) {
@@ -169,11 +176,22 @@ export default function WorkspacePage() {
 
           if (status.status === "completed") {
             setCompiling(null);
+            setCompileProgress(1);
+            // 浏览器通知
+            if ("Notification" in window && Notification.permission === "granted") {
+              try { new Notification("知识编译完成", { body: `视频 ${bvid} 编译成功`, icon: "/favicon.ico" }); } catch {}
+            }
+            // 清理 localStorage 中的编译任务
+            try { localStorage.removeItem(`bilimind_compile_${bvid}`); } catch {}
             if (selectedBvid === bvid) {
               void fetchResult(bvid, activeSessionId);
             }
           } else if (status.status === "failed") {
             setCompiling(null);
+            if ("Notification" in window && Notification.permission === "granted") {
+              try { new Notification("编译失败", { body: `视频 ${bvid} 编译失败: ${status.message}`, icon: "/favicon.ico" }); } catch {}
+            }
+            try { localStorage.removeItem(`bilimind_compile_${bvid}`); } catch {}
           } else {
             setTimeout(poll, 2000);
           }

@@ -22,6 +22,7 @@ from app.models import KnowledgeNode, NodeSegmentLink, Segment, VideoCache, _fmt
 from app.config import settings
 from app.services.graph_store import GraphStore
 from app.services.path_recommender import PathRecommender
+from app.utils import resolve_owner_mid as _resolve_owner_mid
 
 router = APIRouter(prefix="/learning-path", tags=["学习路径"])
 
@@ -42,10 +43,11 @@ def _is_shared_session(session_id: Optional[str]) -> bool:
 
 
 async def _load_graph_store(db: AsyncSession, session_id: Optional[str]) -> GraphStore:
-    """按 session_id 加载隔离后的图谱快照，避免跨用户缓存。"""
+    """按 owner_mid 加载隔离后的图谱快照，避免跨用户缓存。"""
+    from app.utils import resolve_owner_mid as _resolve_owner_mid
+    owner_mid = await _resolve_owner_mid(db, session_id)
     graph = GraphStore(graph_path=settings.graph_persist_path)
-    effective_sid = None if _is_shared_session(session_id) else session_id
-    await graph.load_from_db(db, session_id=effective_sid)
+    await graph.load_from_db(db, session_id=session_id, owner_mid=owner_mid)
     return graph
 
 
@@ -68,7 +70,9 @@ async def search_target_topics(
         .limit(limit)
     )
     if not _is_shared_session(session_id):
-        stmt = stmt.where(KnowledgeNode.session_id == session_id)
+        owner_mid = await _resolve_owner_mid(db, session_id)
+        if owner_mid is not None:
+            stmt = stmt.where(KnowledgeNode.owner_mid == owner_mid)
     result = await db.execute(stmt)
     nodes = result.scalars().all()
     return [

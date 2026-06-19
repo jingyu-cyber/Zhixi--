@@ -3,6 +3,27 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { treeApi, TreeNode, TreeResponse, treeMemoryApi, TreeMemorySummary } from "@/lib/api";
+
+/** 递归去重：同名节点只保留 source_count 最高的 */
+function dedupTreeNodes(nodes: TreeNode[]): TreeNode[] {
+  const seen = new Map<string, TreeNode>();
+  for (const n of nodes) {
+    const key = (n.normalized_name || n.name).toLowerCase().trim();
+    const existing = seen.get(key);
+    if (!existing || (n.source_count || 0) > (existing.source_count || 0)) {
+      seen.set(key, n);
+    }
+  }
+  return Array.from(seen.values()).map(n => ({
+    ...n,
+    children: n.children ? dedupTreeNodes(n.children) : [],
+    node_count: n.children ? n.children.length : n.node_count,
+  }));
+}
+
+function dedupTree(data: TreeResponse): TreeResponse {
+  return { ...data, tree: dedupTreeNodes(data.tree) };
+}
 import { isActiveSession } from "@/lib/session";
 
 interface TreeNodeItemProps {
@@ -170,7 +191,7 @@ export default function KnowledgeTree({ sessionId, onNodeSelect, selectedNodeId 
     fetchTree
       .then((tree) => {
         if (requestIdRef.current === requestId && isActiveSession(activeSessionId)) {
-          setData(tree);
+          setData(dedupTree(tree));
         }
       })
       .catch((e) => {

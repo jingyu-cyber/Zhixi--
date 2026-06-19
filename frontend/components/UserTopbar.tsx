@@ -38,6 +38,18 @@ export default function UserTopbar() {
 
   return (
     <>
+      {/* 返回按钮 */}
+      <button
+        onClick={() => (window.history.length > 1 ? router.back() : router.push("/"))}
+        className="btn-icon"
+        title="返回上一页"
+        style={{ marginRight: 4 }}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 12H5M12 19l-7-7 7-7" />
+        </svg>
+      </button>
+
       {/* 樱花开关 */}
       <button
         onClick={togglePetals}

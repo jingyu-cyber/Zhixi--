@@ -103,7 +103,7 @@ export default function KnowledgeGraph3D({
     const activeSessionId = sessionId;
     setLoading(true);
     treeApi
-      .getGraph({ topicId, sessionId })
+      .getGraph({ topicId, sessionId, limit: 400 })
       .then((graph) => {
         if (requestIdRef.current === requestId && isActiveSession(activeSessionId)) {
           setData(graph);
@@ -282,6 +282,24 @@ export default function KnowledgeGraph3D({
     []
   );
 
+  // ==================== 力导向居中 ====================
+
+  useEffect(() => {
+    if (!fgRef.current || !data) return;
+    const fg = fgRef.current;
+    // 节点初始位置聚在原点附近
+    data.nodes.forEach((n: any) => {
+      n.x = (Math.random() - 0.5) * 10;
+      n.y = (Math.random() - 0.5) * 10;
+      n.z = (Math.random() - 0.5) * 10;
+    });
+    // 等力模拟稳定后自动居中
+    const timer = setTimeout(() => {
+      try { fg.zoomToFit(600, 50); } catch {}
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [data]);
+
   // ==================== Bloom 后处理 ====================
 
   useEffect(() => {
@@ -325,41 +343,43 @@ export default function KnowledgeGraph3D({
       // 静默处理
     }
 
-    // 尝试添加 Bloom 后处理
+    // 尝试添加 Bloom 后处理（带降级）
     try {
       const renderer = fg.renderer();
       const scene = fg.scene();
       const camera = fg.camera();
 
       if (renderer && scene && camera && !renderer.userData._bloomSetup) {
-        // 使用 three.js 内置的 EffectComposer
-        import("three/examples/jsm/postprocessing/EffectComposer.js").then(({ EffectComposer }) => {
-          import("three/examples/jsm/postprocessing/RenderPass.js").then(({ RenderPass }) => {
-            import("three/examples/jsm/postprocessing/UnrealBloomPass.js").then(({ UnrealBloomPass }) => {
-              const composer = new EffectComposer(renderer);
-              const renderPass = new RenderPass(scene, camera);
-              composer.addPass(renderPass);
+        Promise.all([
+          import("three/examples/jsm/postprocessing/EffectComposer.js"),
+          import("three/examples/jsm/postprocessing/RenderPass.js"),
+          import("three/examples/jsm/postprocessing/UnrealBloomPass.js"),
+        ]).then(([{ EffectComposer }, { RenderPass }, { UnrealBloomPass }]) => {
+          try {
+            const composer = new EffectComposer(renderer);
+            const renderPass = new RenderPass(scene, camera);
+            composer.addPass(renderPass);
 
-              const bloomPass = new UnrealBloomPass(
-                new THREE.Vector2(window.innerWidth, window.innerHeight),
-                1.2,  // strength
-                0.6,  // radius
-                0.15  // threshold
-              );
-              composer.addPass(bloomPass);
+            const bloomPass = new UnrealBloomPass(
+              new THREE.Vector2(window.innerWidth, window.innerHeight),
+              1.2, 0.6, 0.15
+            );
+            composer.addPass(bloomPass);
 
-              // 替换渲染循环
-              const originalRender = renderer.render.bind(renderer);
-              renderer.render = (s: THREE.Scene, c: THREE.Camera) => {
-                composer.render();
-              };
-              renderer.userData._bloomSetup = true;
-            });
-          });
+            renderer.render = (s: THREE.Scene, c: THREE.Camera) => { composer.render(); };
+            renderer.userData._bloomSetup = true;
+            renderer.userData._bloomAvailable = true;
+          } catch (innerErr) {
+            console.warn("Bloom 后处理初始化失败，使用降级渲染:", innerErr);
+            renderer.userData._bloomAvailable = false;
+          }
+        }).catch((err) => {
+          console.warn("Bloom 后处理模块加载失败，使用降级渲染:", err);
+          renderer.userData._bloomAvailable = false;
         });
       }
     } catch (e) {
-      console.warn("Bloom 后处理加载失败:", e);
+      console.warn("Bloom 后处理设置失败:", e);
     }
   }, [data]);
 
@@ -404,7 +424,11 @@ export default function KnowledgeGraph3D({
         backgroundColor="#000000"
         showNavInfo={false}
         warmupTicks={80}
-        cooldownTicks={150}
+        cooldownTicks={200}
+        enablePointerInteraction={true}
+        minZoom={30}
+        maxZoom={600}
+        d3VelocityDecay={0.25}
       />
 
       {/* 图谱统计 */}

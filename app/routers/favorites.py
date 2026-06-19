@@ -3,13 +3,17 @@ BiliMind 知识树导航系统
 
 收藏夹路由
 """
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from loguru import logger
 from typing import List, Optional
 from pydantic import BaseModel
-from app.models import FavoriteFolderInfo
+from sqlalchemy import select, func, or_
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import get_db
+from app.models import FavoriteFolderInfo, VideoCache, Segment
 from app.services.bilibili import BilibiliService
 from app.routers.auth import get_session
+from app.utils import resolve_owner_mid as _resolve_owner_mid
 
 router = APIRouter(prefix="/favorites", tags=["收藏夹"])
 
@@ -410,3 +414,79 @@ async def clean_invalid_resources(
     except Exception as e:
         logger.error(f"清理失效内容失败: {e}")
         raise HTTPException(status_code=500, detail=f"清理失败: {str(e)}")
+
+
+# ==================== 本地视频库 (Issue #2) ====================
+
+@router.get("/local-videos")
+async def get_local_videos(
+    session_id: str = Query(..., description="会话ID"),
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(50, ge=10, le=200, description="每页数量"),
+    search: Optional[str] = Query(None, description="搜索关键词（标题/UP主）"),
+    min_duration: Optional[int] = Query(None, description="最小时长（秒）"),
+    max_duration: Optional[int] = Query(None, description="最大时长（秒）"),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取本地已编译/缓存的视频列表（带分页和筛选）"""
+    owner_mid = await _resolve_owner_mid(db, session_id)
+
+    query = select(VideoCache)
+    count_query = select(func.count()).select_from(VideoCache)
+
+    # 用户隔离
+    if owner_mid is not None:
+        query = query.where(VideoCache.data_owner_mid == owner_mid)
+        count_query = count_query.where(VideoCache.data_owner_mid == owner_mid)
+
+    # 搜索筛选
+    if search:
+        pattern = f"%{search}%"
+        search_filter = or_(
+            VideoCache.title.ilike(pattern),
+            VideoCache.owner_name.ilike(pattern),
+            VideoCache.description.ilike(pattern),
+        )
+        query = query.where(search_filter)
+        count_query = count_query.where(search_filter)
+
+    # 时长筛选
+    if min_duration is not None:
+        query = query.where(VideoCache.duration >= min_duration)
+        count_query = count_query.where(VideoCache.duration >= min_duration)
+    if max_duration is not None:
+        query = query.where(VideoCache.duration <= max_duration)
+        count_query = count_query.where(VideoCache.duration <= max_duration)
+
+    total = await db.scalar(count_query) or 0
+
+    result = await db.execute(
+        query.order_by(VideoCache.updated_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    videos = result.scalars().all()
+
+    return {
+        "videos": [
+            {
+                "bvid": v.bvid,
+                "title": v.title,
+                "owner_name": v.owner_name,
+                "duration": v.duration,
+                "pic_url": v.pic_url,
+                "extraction_status": v.extraction_status,
+                "knowledge_node_count": v.knowledge_node_count,
+                "content_category": getattr(v, "content_category", None),
+                "series_name": getattr(v, "series_name", None),
+                "url": f"https://www.bilibili.com/video/{v.bvid}",
+            }
+            for v in videos
+        ],
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": max(1, (total + page_size - 1) // page_size) if total > 0 else 0,
+        }
+    }

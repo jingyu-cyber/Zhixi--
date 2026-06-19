@@ -7,9 +7,12 @@
 - GET  /compile/result/{bvid}  — 获取编译结果
 """
 import uuid
+import asyncio
+import json
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks, Depends
+from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import select, func
@@ -19,6 +22,7 @@ from app.database import get_db, get_db_context
 from app.models import (
     Concept, Claim, ConceptRelation, Segment, VideoCache,
 )
+from app.config import settings
 from app.services.knowledge_compiler import compile_video, _fmt_time
 from app.services.bilibili import BilibiliService
 from app.services.content_fetcher import ContentFetcher
@@ -116,6 +120,21 @@ async def _compile_video_task(
             compile_tasks[task_id]["message"] = "正在编译知识结构..."
 
             async with get_db_context() as db:
+                # 检查视频时长，超长视频拒绝编译
+                vc_result = await db.execute(
+                    select(VideoCache).where(VideoCache.bvid == bvid)
+                )
+                video_cache = vc_result.scalar_one_or_none()
+                if video_cache and video_cache.duration and video_cache.duration > settings.max_compile_duration:
+                    hours = video_cache.duration / 3600
+                    compile_tasks[task_id]["status"] = "failed"
+                    compile_tasks[task_id]["message"] = (
+                        f"视频时长 {hours:.1f} 小时，超过编译上限 {settings.max_compile_duration / 3600:.0f} 小时。"
+                        f"请确认该视频是否为合集/课程，若是请先拆分后再编译。"
+                    )
+                    logger.warning(f"[{bvid}] 编译被拒绝: 时长 {hours:.1f}h > 上限 {settings.max_compile_duration / 3600:.0f}h")
+                    return
+
                 owner_mid = await _resolve_owner_mid(db, session_id)
                 result = await compile_video(
                     db=db,
@@ -163,6 +182,39 @@ async def get_compile_status(
         progress=task["progress"],
         message=task["message"],
     )
+
+
+# ==================== GET /compile/status/{task_id}/stream (SSE) ====================
+
+@router.get("/status/{task_id}/stream")
+async def stream_compile_status(
+    task_id: str,
+    session_id: str = Query(..., description="会话ID"),
+):
+    """通过 SSE 实时推送编译进度（替代轮询）"""
+    if task_id not in compile_tasks:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    task = compile_tasks[task_id]
+    if task.get("session_id") != session_id:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    async def event_stream():
+        last_progress = -1
+        while True:
+            task = compile_tasks.get(task_id)
+            if not task:
+                break
+            current_progress = task.get("progress", 0)
+            # 仅在进度变化时推送
+            if current_progress != last_progress:
+                last_progress = current_progress
+                yield f"data: {json.dumps({'status': task['status'], 'progress': current_progress, 'message': task['message']})}\n\n"
+            if task["status"] in ("completed", "failed"):
+                break
+            await asyncio.sleep(1.5)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 # ==================== GET /compile/result/{bvid} ====================

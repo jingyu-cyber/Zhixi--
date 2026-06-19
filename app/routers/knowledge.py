@@ -26,6 +26,7 @@ from app.services.tree_builder import TreeBuilder
 from app.services.graph_rag import GraphRAGService
 from app.config import settings
 from app.routers.auth import get_session
+from app.utils import resolve_owner_mid as _resolve_owner_mid
 
 router = APIRouter(prefix="/knowledge", tags=["知识库"])
 
@@ -796,6 +797,9 @@ async def _extract_knowledge_for_video(
     2. LLM 抽取实体和关系
     3. 写入图存储 + SQLite
     """
+    # 解析 owner_mid 用于数据隔离
+    owner_mid = await _resolve_owner_mid(db, session_id)
+
     # 检查是否已抽取
     existing_query = select(func.count()).select_from(Segment).where(Segment.video_bvid == bvid)
     if session_id:
@@ -838,6 +842,7 @@ async def _extract_knowledge_for_video(
             confidence=seg.get("confidence", 0.5),
             extraction_status="pending",
             session_id=session_id,
+            owner_mid=owner_mid,
         )
         db.add(record)
         segment_records.append(record)
@@ -912,6 +917,7 @@ async def _extract_knowledge_for_video(
                 "source_count": entity.get("source_count", 1),
                 "review_status": "auto" if entity.get("confidence", 0) >= settings.tree_min_confidence else "pending_review",
                 "session_id": session_id,
+                "owner_mid": owner_mid,
             })
             graph.add_node(node.id, **{
                 "node_type": node.node_type,
@@ -935,6 +941,7 @@ async def _extract_knowledge_for_video(
                     relation="mentions",
                     confidence=entity.get("confidence", 0.5),
                     session_id=session_id,
+                    owner_mid=owner_mid,
                 ))
 
     # 写入关系
@@ -958,6 +965,7 @@ async def _extract_knowledge_for_video(
                 "evidence_video_bvid": bvid,
                 "evidence_segment_id": rel.get("_segment_id"),
                 "session_id": session_id,
+                "owner_mid": owner_mid,
             })
 
     # 更新 segment 状态

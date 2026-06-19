@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import KnowledgeNode, Segment, VideoCache, NodeSegmentLink
 from app.services.rag import RAGService
+from app.utils import resolve_owner_mid as _resolve_owner_mid
 
 router = APIRouter(prefix="/search", tags=["搜索"])
 
@@ -120,9 +121,10 @@ async def _search_nodes(q: str, limit: int, db: AsyncSession, session_id: Option
         .order_by(KnowledgeNode.source_count.desc())
         .limit(limit * 3)  # 扩大初始抓取量，去重后再截断
     )
-    # 演示/未登录用户查看全部共享数据，已登录真实用户按 session 隔离
-    if not _is_shared_session(session_id):
-        query = query.where(KnowledgeNode.session_id == session_id)
+    # 演示/未登录用户查看全部共享数据，已登录真实用户按 owner_mid 隔离
+    owner_mid = await _resolve_owner_mid(db, session_id)
+    if owner_mid is not None:
+        query = query.where(KnowledgeNode.owner_mid == owner_mid)
     result = await db.execute(query)
     nodes = result.scalars().all()
 
@@ -141,8 +143,8 @@ async def _search_nodes(q: str, limit: int, db: AsyncSession, session_id: Option
         count_query = select(func.count(func.distinct(NodeSegmentLink.video_bvid))).where(
             NodeSegmentLink.node_id == n.id
         )
-        if not _is_shared_session(session_id):
-            count_query = count_query.where(NodeSegmentLink.session_id == session_id)
+        if owner_mid is not None:
+            count_query = count_query.where(NodeSegmentLink.owner_mid == owner_mid)
         vid_count = await db.scalar(count_query)
         items.append({
             "id": n.id,
@@ -171,10 +173,11 @@ async def _search_videos(q: str, limit: int, db: AsyncSession, session_id: Optio
             )
         )
     )
-    if not _is_shared_session(session_id):
+    owner_mid_v = await _resolve_owner_mid(db, session_id)
+    if owner_mid_v is not None:
         query = query.where(
             VideoCache.bvid.in_(
-                select(Segment.video_bvid).where(Segment.session_id == session_id)
+                select(Segment.video_bvid).where(Segment.owner_mid == owner_mid_v)
             )
         )
     query = query.limit(limit)
@@ -186,8 +189,8 @@ async def _search_videos(q: str, limit: int, db: AsyncSession, session_id: Optio
         count_query = select(func.count(func.distinct(NodeSegmentLink.node_id))).where(
             NodeSegmentLink.video_bvid == v.bvid
         )
-        if not _is_shared_session(session_id):
-            count_query = count_query.where(NodeSegmentLink.session_id == session_id)
+        if owner_mid_v is not None:
+            count_query = count_query.where(NodeSegmentLink.owner_mid == owner_mid_v)
         kn_count = await db.scalar(count_query)
         items.append({
             "bvid": v.bvid,

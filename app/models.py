@@ -3,7 +3,7 @@ BiliMind 知识树学习导航系统
 
 数据模型定义
 """
-from sqlalchemy import Column, Integer, Float, String, Text, DateTime, Boolean, JSON
+from sqlalchemy import Column, Integer, Float, String, Text, DateTime, Boolean, JSON, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -51,6 +51,12 @@ class VideoCache(Base):
     knowledge_node_count = Column(Integer, default=0)  # 关联知识点数量
     session_id = Column(String(64), index=True, nullable=True)  # 用户隔离(废弃)
     data_owner_mid = Column(Integer, index=True, nullable=True)  # 数据归属(B站用户ID)
+
+    # 内容分类 (Issue #5)
+    content_category = Column(String(20), nullable=True)  # course/single_video/short_video/series
+    series_key = Column(String(100), index=True, nullable=True)  # 系列分组键
+    series_name = Column(String(200), nullable=True)  # 系列名称
+    series_position = Column(Integer, nullable=True)  # 系列内位置
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -465,6 +471,7 @@ class ChatRequest(BaseModel):
     """对话请求"""
     question: str
     session_id: Optional[str] = None
+    conversation_id: Optional[int] = None  # 关联已有对话，None 则自动创建
     folder_ids: Optional[list[int]] = None  # 指定收藏夹，None 表示全部
 
 
@@ -472,6 +479,50 @@ class ChatResponse(BaseModel):
     """对话响应"""
     answer: str
     sources: list[dict]  # 来源视频列表
+
+
+# ==================== 对话历史 (Issue #4) ====================
+
+class Conversation(Base):
+    """对话会话表"""
+    __tablename__ = 'conversations'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String(64), index=True, nullable=False)
+    owner_mid = Column(Integer, index=True, nullable=True)
+    title = Column(String(200), nullable=True)  # 自动从第一个问题生成
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ChatMessage(Base):
+    """对话消息表"""
+    __tablename__ = 'chat_messages'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    conversation_id = Column(Integer, ForeignKey('conversations.id'), index=True, nullable=False)
+    role = Column(String(10), nullable=False)  # 'user' or 'assistant'
+    content = Column(Text, nullable=False)
+    sources_json = Column(JSON, nullable=True)  # 来源视频引用
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ConversationResponse(BaseModel):
+    """对话列表响应"""
+    id: int
+    title: Optional[str] = None
+    created_at: str
+    updated_at: str
+    message_count: int = 0
+
+
+class ConversationDetailResponse(BaseModel):
+    """对话详情响应"""
+    id: int
+    title: Optional[str] = None
+    messages: list[dict]
+    created_at: str
+    updated_at: str
 
 
 # ==================== 知识树 API 模型 ====================

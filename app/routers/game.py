@@ -29,10 +29,11 @@ def _is_shared_session(session_id: Optional[str]) -> bool:
 
 
 async def _get_session_graph(db: AsyncSession, session_id: Optional[str]) -> GraphStore:
+    from app.utils import resolve_owner_mid as _resolve_owner_mid
+    owner_mid = await _resolve_owner_mid(db, session_id)
     graph = GraphStore(graph_path=settings.graph_persist_path)
-    # 演示/未登录用户查看全部共享知识库
-    effective_sid = None if _is_shared_session(session_id) else session_id
-    await graph.load_from_db(db, session_id=effective_sid, owner_mid=None)
+    # 演示/未登录用户 (owner_mid=None) 查看全部共享知识库；真实用户按 owner_mid 隔离
+    await graph.load_from_db(db, session_id=session_id, owner_mid=owner_mid)
     return graph
 
 # 有效关系类型

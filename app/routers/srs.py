@@ -22,11 +22,13 @@ async def _seed_srs_from_graph(db: AsyncSession, session_id: str, limit: int = 3
     from app.models import KnowledgeNode
     from app.services.graph_store import GraphStore
     from app.config import settings
+    from app.utils import resolve_owner_mid as _resolve_owner_mid
     from datetime import datetime, timedelta
 
-    # 加载图谱
+    # 加载图谱（按 owner_mid 隔离，演示用户查看全部）
+    owner_mid = await _resolve_owner_mid(db, session_id)
     graph = GraphStore(graph_path=settings.graph_persist_path)
-    await graph.load_from_db(db, session_id=None, owner_mid=None)  # 共享知识库
+    await graph.load_from_db(db, session_id=session_id, owner_mid=owner_mid)
 
     all_nodes = graph.all_nodes()
     if not all_nodes:

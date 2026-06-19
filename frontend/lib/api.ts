@@ -511,12 +511,14 @@ export const treeApi = {
         return request<TreeResponse>(`/tree?${params.toString()}`);
     },
 
-    getGraph: (opts?: { topicId?: number; minConfidence?: number; sessionId?: string | null }) => {
+    getGraph: (opts?: { topicId?: number; minConfidence?: number; sessionId?: string | null; limit?: number; offset?: number }) => {
         const params = new URLSearchParams();
         const sid = opts?.sessionId ?? getSessionId();
         if (sid) params.set("session_id", sid);
         if (opts?.topicId) params.set("topic_id", String(opts.topicId));
         if (opts?.minConfidence) params.set("min_confidence", String(opts.minConfidence));
+        if (opts?.limit) params.set("limit", String(opts.limit));
+        if (opts?.offset) params.set("offset", String(opts.offset));
         return request<GraphData>(`/tree/graph?${params.toString()}`);
     },
 

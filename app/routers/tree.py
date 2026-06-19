@@ -23,11 +23,10 @@ router = APIRouter(prefix="/tree", tags=["知识树"])
 
 async def _load_graph_store(db: AsyncSession, session_id: Optional[str] = None) -> GraphStore:
     """为当前请求加载隔离后的图谱快照（按 owner_mid 过滤，演示/未登录用户查看全部）"""
-    owner_mid = None  # Shared knowledge base - all users see all data
+    owner_mid = await _resolve_owner_mid(db, session_id)
     gs = GraphStore(graph_path=settings.graph_persist_path)
-    # 有 owner_mid 的真实用户按 owner 隔离；演示/未登录用户不受限查看全部数据
-    effective_sid = session_id if owner_mid is not None else None
-    await gs.load_from_db(db, session_id=effective_sid, owner_mid=owner_mid)
+    # 有 owner_mid 的真实用户按 owner 隔离；演示/未登录用户 (owner_mid=None) 不受限查看全部数据
+    await gs.load_from_db(db, session_id=session_id, owner_mid=owner_mid)
     return gs
 
 
@@ -88,6 +87,8 @@ async def get_knowledge_tree(
 async def get_knowledge_graph(
     topic_id: Optional[int] = Query(None, description="按主题筛选子图"),
     min_confidence: Optional[float] = Query(None, description="最低置信度"),
+    limit: int = Query(500, ge=50, le=2000, description="最大节点数"),
+    offset: int = Query(0, ge=0, description="分页偏移"),
     session_id: Optional[str] = Query(None, description="会话ID，用于数据隔离"),
     db: AsyncSession = Depends(get_db),
 ):
@@ -137,11 +138,26 @@ async def get_knowledge_graph(
             nodes = [n for n in nodes if n["id"] in subgraph_ids]
             valid_ids = subgraph_ids & valid_ids
 
-        # 收集边（只保留两端都在 valid_ids 中的边）
+        # 按重要性排序：topic 优先 > grade (core>normal>weak) > source_count
+        grade_order = {"core": 0, "normal": 1, "weak": 2}
+        nodes.sort(key=lambda n: (
+            0 if n.get("node_type") == "topic" else 1,
+            grade_order.get(n.get("grade", "normal"), 1),
+            -(n.get("source_count", 1)),
+        ))
+
+        total_nodes = len(nodes)
+        has_more = (offset + limit) < total_nodes
+
+        # 分页截断
+        paged_nodes = nodes[offset:offset + limit]
+        paged_ids = {n["id"] for n in paged_nodes}
+
+        # 收集边（只保留两端都在 paged_ids 中的边）
         links = []
         if gs.graph is not None:
             for src, tgt, data in gs.graph.edges(data=True):
-                if src in valid_ids and tgt in valid_ids:
+                if src in paged_ids and tgt in paged_ids:
                     links.append({
                         "source": src,
                         "target": tgt,
@@ -151,11 +167,15 @@ async def get_knowledge_graph(
                     })
 
         return {
-            "nodes": nodes,
+            "nodes": paged_nodes,
             "links": links,
             "stats": {
-                "node_count": len(nodes),
+                "node_count": len(paged_nodes),
                 "link_count": len(links),
+                "total_nodes": total_nodes,
+                "has_more": has_more,
+                "offset": offset,
+                "limit": limit,
             }
         }
     except Exception as e:
@@ -182,7 +202,7 @@ async def get_topics(
 ):
     """获取一级主题列表（去重）"""
     try:
-        owner_mid = None  # Shared knowledge base - all users see all data
+        owner_mid = await _resolve_owner_mid(db, session_id)
         # 使用子查询去重：取每个 normalized_name 中 source_count 最高的节点
         from sqlalchemy import and_
         subq = (
@@ -227,7 +247,7 @@ async def get_node_detail(
     db: AsyncSession = Depends(get_db),
 ):
     """获取知识节点详情"""
-    owner_mid = None  # Shared knowledge base - all users see all data
+    owner_mid = await _resolve_owner_mid(db, session_id)
     node_query = select(KnowledgeNode).where(KnowledgeNode.id == node_id)
     if owner_mid is not None:
         node_query = node_query.where(KnowledgeNode.owner_mid == owner_mid)
@@ -254,11 +274,13 @@ async def get_node_detail(
     successors = gs.get_successors(node_id)
     related = gs.get_related(node_id)
 
-    # 关联主题
+    # 关联主题（去重）
     related_topics = []
+    seen_topic_ids = set()
     part_of_targets = gs.get_neighbors(node_id, relation_type="part_of", direction="out")
     for t in part_of_targets:
-        if t.get("node_type") == "topic" and t["id"] != (node.main_topic_id or -1):
+        if t.get("node_type") == "topic" and t["id"] != (node.main_topic_id or -1) and t["id"] not in seen_topic_ids:
+            seen_topic_ids.add(t["id"])
             related_topics.append({"id": t["id"], "name": t.get("name", "")})
 
     # 关联视频和片段
@@ -386,7 +408,7 @@ async def get_video_detail(
     db: AsyncSession = Depends(get_db),
 ):
     """获取视频详情（知识点 + 时间片段 + 树中位置）"""
-    owner_mid = None  # Shared knowledge base - all users see all data
+    owner_mid = await _resolve_owner_mid(db, session_id)
     result = await db.execute(select(VideoCache).where(VideoCache.bvid == bvid))
     video = result.scalar_one_or_none()
     if not video:
@@ -482,7 +504,7 @@ async def get_node_segments(
     db: AsyncSession = Depends(get_db),
 ):
     """获取节点关联的所有片段"""
-    owner_mid = None  # Shared knowledge base - all users see all data if session_id else None
+    owner_mid = await _resolve_owner_mid(db, session_id)
     links_query = select(NodeSegmentLink).where(NodeSegmentLink.node_id == node_id)
     if owner_mid is not None:
         links_query = links_query.where(NodeSegmentLink.owner_mid == owner_mid)
@@ -524,7 +546,7 @@ async def get_learning_path(
     db: AsyncSession = Depends(get_db),
 ):
     """生成学习路径推荐"""
-    owner_mid = None  # Shared knowledge base - all users see all data
+    owner_mid = await _resolve_owner_mid(db, session_id)
     gs = await _load_graph_store(db, session_id=session_id)
 
     if not gs.has_node(node_id):
@@ -625,7 +647,7 @@ async def get_tree_stats(
     db: AsyncSession = Depends(get_db),
 ):
     """获取知识树统计"""
-    owner_mid = None  # Shared knowledge base - all users see all data if session_id else None
+    owner_mid = await _resolve_owner_mid(db, session_id)
     if owner_mid is not None:
         node_count = await db.scalar(select(func.count()).select_from(KnowledgeNode).where(KnowledgeNode.owner_mid == owner_mid))
         edge_count = await db.scalar(select(func.count()).select_from(KnowledgeEdge).where(KnowledgeEdge.owner_mid == owner_mid))
@@ -674,7 +696,7 @@ async def get_pending_nodes(
     db: AsyncSession = Depends(get_db),
 ):
     """获取待审核节点列表"""
-    owner_mid = None  # Shared knowledge base - all users see all data if session_id else None
+    owner_mid = await _resolve_owner_mid(db, session_id)
     query = select(KnowledgeNode).where(KnowledgeNode.review_status == "pending_review")
     if owner_mid is not None:
         query = query.where(KnowledgeNode.owner_mid == owner_mid)
@@ -706,7 +728,7 @@ async def review_node(
     if action not in ("approve", "reject"):
         raise HTTPException(status_code=400, detail="action 必须为 approve 或 reject")
 
-    owner_mid = None  # Shared knowledge base - all users see all data if session_id else None
+    owner_mid = await _resolve_owner_mid(db, session_id)
     query = select(KnowledgeNode).where(KnowledgeNode.id == node_id)
     if owner_mid is not None:
         query = query.where(KnowledgeNode.owner_mid == owner_mid)
@@ -725,7 +747,7 @@ async def review_node(
 
 async def _fill_video_counts(tree_nodes: list[dict], db: AsyncSession, session_id: Optional[str] = None) -> None:
     """递归填充树节点的 video_count"""
-    owner_mid = None  # Shared knowledge base - all users see all data if session_id else None
+    owner_mid = await _resolve_owner_mid(db, session_id)
     for node in tree_nodes:
         node_id = node.get("id")
         if node_id and node_id > 0:

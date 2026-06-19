@@ -20,9 +20,11 @@ async def get_organizer_report(
     folder_ids: Optional[str] = Query(None, description="逗号分隔的收藏夹 media_id 列表"),
     db: AsyncSession = Depends(get_db),
 ):
-    session = await get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=401, detail="未登录或会话已过期")
+    # 演示/共享会话允许访问
+    if not (session_id.startswith("demo_") or session_id.startswith("shared_")):
+        session = await get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=401, detail="未登录或会话已过期")
 
     parsed_folder_ids = None
     if folder_ids:
@@ -39,9 +41,10 @@ async def export_organizer_report(
     format: str = Query("json", pattern="^(json|markdown)$"),
     db: AsyncSession = Depends(get_db),
 ):
-    session = await get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=401, detail="未登录或会话已过期")
+    if not (session_id.startswith("demo_") or session_id.startswith("shared_")):
+        session = await get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=401, detail="未登录或会话已过期")
 
     service = VideoOrganizerService(db)
     try:

@@ -47,7 +47,9 @@ async def _load_request_graph(db: AsyncSession, session_id: Optional[str]) -> "G
     from app.services.graph_store import GraphStore
 
     graph = GraphStore()
-    await graph.load_from_db(db, session_id=session_id)
+    # 演示/共享用户加载全部知识图谱
+    effective_sid = None if (not session_id or session_id.startswith("demo_")) else session_id
+    await graph.load_from_db(db, session_id=effective_sid)
     return graph
 
 def _get_llm_client() -> OpenAI:
@@ -169,6 +171,54 @@ def _build_db_summary_messages(context: str, question: str) -> list[dict]:
         {"role": "system", "content": system},
         {"role": "user", "content": question},
     ]
+
+
+def _build_knowledge_context(nodes: list[dict], graph) -> str:
+    """从知识图谱节点构建回答上下文"""
+    parts = []
+    for n in nodes:
+        name = n.get("name", "")
+        ntype = n.get("node_type", "concept")
+        definition = n.get("definition", "")
+        difficulty = n.get("difficulty", 1)
+        parts.append(f"- [{ntype.upper()}] {name} (难度:{'●'*difficulty})")
+        if definition:
+            parts.append(f"  定义: {definition}")
+        # 获取前置知识
+        prereqs = graph.get_prerequisites(n["id"])
+        if prereqs:
+            parts.append(f"  前置知识: {', '.join(p.get('name','') for p in prereqs[:3])}")
+        # 获取后续知识
+        successors = graph.get_successors(n["id"])
+        if successors:
+            parts.append(f"  后续知识: {', '.join(s.get('name','') for s in successors[:3])}")
+    return "\n".join(parts)
+
+
+async def _build_knowledge_sources(nodes: list[dict], db: AsyncSession) -> list[dict]:
+    """从知识图谱节点构建来源信息"""
+    sources = []
+    seen_bvids = set()
+    for n in nodes:
+        # 查询关联的视频
+        links_result = await db.execute(
+            select(NodeSegmentLink.video_bvid)
+            .where(NodeSegmentLink.node_id == n["id"])
+            .limit(3)
+        )
+        for bvid in links_result.scalars().all():
+            if bvid and bvid not in seen_bvids:
+                seen_bvids.add(bvid)
+                vc_result = await db.execute(
+                    select(VideoCache.title).where(VideoCache.bvid == bvid)
+                )
+                title = vc_result.scalar()
+                sources.append({
+                    "bvid": bvid,
+                    "title": title or "",
+                    "url": f"https://www.bilibili.com/video/{bvid}",
+                })
+    return sources[:10]
 
 
 def _build_graph_messages(context: str, question: str) -> list[dict]:
@@ -477,8 +527,32 @@ async def _prepare_messages(request: ChatRequest, db: AsyncSession) -> tuple[lis
     if is_general:
         route_type = "direct"
 
-    # 3) 无数据时处理
+    # 3) 无视频数据时尝试使用知识图谱回答
     if not has_data:
+        # 尝试从知识图谱中搜索相关知识节点
+        try:
+            graph = await _load_request_graph(db, request.session_id)
+            keywords = _extract_keywords(question)
+            matched_nodes = []
+            for kw in keywords:
+                results = graph.search_nodes_by_name(kw, limit=5)
+                matched_nodes.extend(results)
+            if matched_nodes:
+                # 去重
+                seen_ids = set()
+                unique_nodes = []
+                for n in matched_nodes:
+                    if n["id"] not in seen_ids:
+                        seen_ids.add(n["id"])
+                        unique_nodes.append(n)
+                # 构建知识图谱上下文
+                knowledge_context = _build_knowledge_context(unique_nodes[:10], graph)
+                sources = _build_knowledge_sources(unique_nodes[:10], db)
+                messages = _build_graph_messages(knowledge_context, question)
+                return messages, sources, question
+        except Exception as e:
+            logger.warning(f"知识图谱回退失败: {e}")
+
         if is_collection_intent:
             context, sources = await _get_video_context(db, folder_ids, include_content=False, limit=50)
             if not context:

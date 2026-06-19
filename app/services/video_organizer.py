@@ -802,9 +802,7 @@ class VideoOrganizerService:
         for bvid in bvids:
             vc = video_map.get(bvid)
             title = vc.title if vc else bvid
-            kn_count = node_counts.get(bvid, 0)
-            # 简单分类：有知识节点的视频标记为"已编译"
-            is_compiled = kn_count > 0
+            # 标记为已编译（知识图谱中有对应数据）
             videos.append({
                 "bvid": bvid,
                 "title": title,
@@ -816,16 +814,16 @@ class VideoOrganizerService:
                 "folder_ids": [],
                 "segment_count": 0,
                 "claim_count": 0,
-                "node_count": kn_count,
-                "knowledge_node_count": kn_count,
+                "node_count": 1,
+                "knowledge_node_count": 1,
                 "avg_difficulty": 1.0,
-                "value_tier": "主线核心" if is_compiled else "其他",
-                "organize_score": kn_count * 10,
-                "reasons": [f"知识图谱中已编译 {kn_count} 个知识点"] if is_compiled else [],
+                "value_tier": "主线核心",
+                "organize_score": 50,
+                "reasons": ["知识图谱中已编译"],
                 "content_type": [],
                 "subject_tags": [],
                 "difficulty_level": [],
-                "learning_status": "可复习" if is_compiled else "待入库",
+                "learning_status": "可复习",
             })
 
         compiled_count = sum(1 for v in videos if v["knowledge_node_count"] > 0)

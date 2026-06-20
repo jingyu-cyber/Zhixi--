@@ -21,6 +21,12 @@ from app.services.video_classifier import OrganizerClassifierService, OrganizerV
 
 
 SUBJECT_KEYWORDS: dict[str, list[str]] = {
+    "高等数学": ["高数", "微积分", "导数", "求导", "积分", "微分方程", "级数", "多元函数", "重积分", "泰勒", "拉格朗日"],
+    "线性代数": ["线代", "矩阵", "行列式", "特征值", "二次型", "向量组", "方程组"],
+    "数据结构与算法": ["数据结构", "链表", "二叉树", "图算法", "排序算法", "哈希表", "动态规划", "贪心", "回溯", "leetcode"],
+    "计算机网络": ["计算机网络", "tcp", "ip", "http", "dns", "路由", "osi", "子网"],
+    "操作系统": ["操作系统", "进程调度", "内存管理", "文件系统", "死锁", "linux内核"],
+    "数据库": ["数据库", "sql", "mysql", "索引", "事务", "nosql", "redis", "范式"],
     "AI": ["ai", "llm", "agent", "大模型", "机器学习", "深度学习", "神经网络", "transformer", "nlp", "cv"],
     "算法": ["算法", "数据结构", "刷题", "leetcode", "动态规划", "图论", "二叉树", "dp", "dfs", "bfs"],
     "前端": ["前端", "react", "vue", "next.js", "typescript", "javascript", "css", "html", "node"],

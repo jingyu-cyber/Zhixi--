@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     extraction_min_confidence: float = Field(default=0.3, env="EXTRACTION_MIN_CONFIDENCE")
     tree_min_confidence: float = Field(default=0.4, env="TREE_MIN_CONFIDENCE")
     extraction_segment_merge_seconds: float = Field(default=30.0, env="EXTRACTION_SEGMENT_MERGE_SECONDS")
+    max_compile_duration: int = Field(default=36000, env="MAX_COMPILE_DURATION")  # 编译时长上限(秒), 默认10h
 
     # 轻量模型
     ml_artifact_dir: str = Field(default="./data/models", env="MODEL_ARTIFACT_DIR")

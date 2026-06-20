@@ -94,7 +94,7 @@ export default function OrganizerPage() {
             </svg>
           </div>
           <div>
-            <span className="brand-title">知映 ZhiYing</span>
+            <span className="brand-title">知析 ZhiXi</span>
             <span className="brand-subtitle">收藏整理分类中心</span>
           </div>
         </div>

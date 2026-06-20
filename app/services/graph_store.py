@@ -85,24 +85,30 @@ class GraphStore:
     # ==================== 查询操作 ====================
 
     def get_neighbors(self, node_id: int, relation_type: Optional[str] = None, direction: str = "out") -> list[dict]:
-        """获取邻居节点"""
+        """获取邻居节点（按 ID 去重）"""
         if self.graph is None or node_id not in self.graph:
             return []
 
+        seen: set[int] = set()
         results = []
+
+        def _add(nid: int, rel: str):
+            if nid not in seen and nid != node_id:
+                seen.add(nid)
+                node_data = self.get_node(nid) or {}
+                results.append({"id": nid, "relation": rel, **node_data})
+
         if direction in ("out", "both"):
             for _, tgt, data in self.graph.out_edges(node_id, data=True):
                 if relation_type and data.get("relation_type") != relation_type:
                     continue
-                node_data = self.get_node(tgt) or {}
-                results.append({"id": tgt, "relation": data.get("relation_type"), **node_data})
+                _add(tgt, data.get("relation_type"))
 
         if direction in ("in", "both"):
             for src, _, data in self.graph.in_edges(node_id, data=True):
                 if relation_type and data.get("relation_type") != relation_type:
                     continue
-                node_data = self.get_node(src) or {}
-                results.append({"id": src, "relation": data.get("relation_type"), **node_data})
+                _add(src, data.get("relation_type"))
 
         return results
 
@@ -254,7 +260,12 @@ class GraphStore:
                 return False
 
     async def load_from_db(self, db: AsyncSession, session_id: Optional[str] = None, owner_mid: Optional[int] = None) -> None:
-        """从 SQLite 加载图（按 owner_mid 过滤，fallback 到 session_id）"""
+        """从 SQLite 加载图（按 owner_mid 过滤，fallback 到 session_id）
+
+        - owner_mid 不为 None: 仅加载该用户的数据（真实 B 站用户隔离）
+        - session_id 不为 None 且 owner_mid 为 None: 按 session_id fallback（过渡期兼容）
+        - 两者都为 None: 加载全部数据（演示/未登录用户）
+        """
         if self.graph is None:
             return
 
@@ -262,7 +273,16 @@ class GraphStore:
 
         node_query = select(KnowledgeNode)
         edge_query = select(KnowledgeEdge)
-        # SHARED: all users see all data — no owner_mid / session_id filtering
+
+        # 数据隔离：owner_mid 优先，session_id 为 fallback
+        # 两者都为 None → 演示用户/共享模式 → 查看全部数据
+        if owner_mid is not None:
+            node_query = node_query.where(KnowledgeNode.owner_mid == owner_mid)
+            edge_query = edge_query.where(KnowledgeEdge.owner_mid == owner_mid)
+        elif session_id is not None and not session_id.startswith("demo_"):
+            node_query = node_query.where(KnowledgeNode.session_id == session_id)
+            edge_query = edge_query.where(KnowledgeEdge.session_id == session_id)
+        # demo_ 或无 session → 不添加过滤 → 查看全部数据
 
         nodes_result = await db.execute(node_query)
         for node in nodes_result.scalars().all():
@@ -290,7 +310,8 @@ class GraphStore:
                 "edge_id": edge.id,
             })
 
-        logger.info(f"Graph loaded from DB: {self.graph.number_of_nodes()} nodes, {self.graph.number_of_edges()} edges")
+        logger.info(f"Graph loaded from DB: {self.graph.number_of_nodes()} nodes, {self.graph.number_of_edges()} edges"
+                    f" (owner_mid={owner_mid}, session_id={'set' if session_id else 'none'})")
 
     async def sync_node_to_db(self, db: AsyncSession, node_id: int, attrs: dict) -> KnowledgeNode:
         """同步单个节点到 SQLite"""
@@ -348,6 +369,7 @@ class GraphStore:
             evidence_segment_id=attrs.get("evidence_segment_id"),
             evidence_video_bvid=attrs.get("evidence_video_bvid"),
             session_id=attrs.get("session_id"),
+            owner_mid=attrs.get("owner_mid"),
         )
         db.add(edge)
         await db.flush()

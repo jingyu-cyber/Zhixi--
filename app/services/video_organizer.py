@@ -91,7 +91,9 @@ class VideoOrganizerService:
         video_folder_map = await self._load_video_folders(session_id, folder_map)
         bvids = sorted(video_folder_map.keys())
         if not bvids:
-            return self._empty_report()
+            # 回退: 从知识图谱节点关联的视频构建报告 (演示/无收藏用户)
+            return await self._build_report_from_graph(session_id)
+        # ... rest same
 
         features = await self._load_video_features(session_id, bvids, video_folder_map)
         videos = [self._analyze_video(item) for item in features]
@@ -729,6 +731,138 @@ class VideoOrganizerService:
                 "",
             ])
         return "\n".join(lines)
+
+    async def _build_report_from_graph(self, session_id: str) -> dict[str, Any]:
+        """从知识图谱节点构建整理报告（无收藏夹数据时的回退方案）"""
+        from app.models import KnowledgeNode, NodeSegmentLink, VideoCache
+        from sqlalchemy import func, distinct, or_
+
+        # 查询所有知识节点关联的视频
+        # 演示/共享用户：不按 session_id 过滤
+        effective_sid = None if (not session_id or session_id.startswith("demo_")) else session_id
+        bvid_query = select(distinct(NodeSegmentLink.video_bvid))
+        if effective_sid:
+            bvid_query = bvid_query.where(NodeSegmentLink.session_id == effective_sid)
+        bvid_result = await self.db.execute(bvid_query)
+        bvids = [row[0] for row in bvid_result.all() if row[0]]
+
+        # 若无 segment links，从 topic 节点名称匹配 video_cache
+        if not bvids:
+            topic_query = select(KnowledgeNode).where(KnowledgeNode.node_type == "topic")
+            if effective_sid:
+                topic_query = topic_query.where(KnowledgeNode.session_id == effective_sid)
+            topic_result = await self.db.execute(topic_query)
+            topics = topic_result.scalars().all()
+            topic_names = list(set(t.name for t in topics if t.name))
+            if topic_names:
+                match_conditions = [VideoCache.title.ilike(f"%{name}%") for name in topic_names[:10]]
+                if match_conditions:
+                    vc_query = select(VideoCache.bvid).where(or_(*match_conditions))
+                    vc_result = await self.db.execute(vc_query)
+                    bvids = [row[0] for row in vc_result.all() if row[0]]
+
+        if not bvids:
+            return self._empty_report()
+
+        # 获取视频信息
+        vc_result = await self.db.execute(
+            select(VideoCache).where(VideoCache.bvid.in_(bvids))
+        )
+        video_map = {v.bvid: v for v in vc_result.scalars().all()}
+
+        # 统计每个视频的知识节点 (从 knowledge_nodes 的 main_topic_id)
+        # node_segment_links 可能为空，直接用知识节点的主归属关系
+        topic_names_to_ids = {}
+        for t in topics:
+            if t.name:
+                topic_names_to_ids.setdefault(t.name, []).append(t.id)
+        node_counts: dict[str, int] = {}
+        if topic_names_to_ids:
+            all_topic_ids = [tid for ids in topic_names_to_ids.values() for tid in ids]
+            if all_topic_ids:
+                node_count_result = await self.db.execute(
+                    select(KnowledgeNode.main_topic_id, func.count(func.distinct(KnowledgeNode.id)))
+                    .where(KnowledgeNode.main_topic_id.in_(all_topic_ids))
+                    .group_by(KnowledgeNode.main_topic_id)
+                )
+                topic_node_counts = {row[0]: row[1] for row in node_count_result.all()}
+                # 将 topic_id 映射到 bvid
+                for bvid in bvids:
+                    vc = video_map.get(bvid)
+                    if vc and vc.title:
+                        matching_ids = topic_names_to_ids.get(vc.title, [])
+                        total = sum(topic_node_counts.get(tid, 0) for tid in matching_ids)
+                        node_counts[bvid] = total
+
+        # 获取知识节点信息
+        node_result = await self.db.execute(
+            select(KnowledgeNode).where(
+                KnowledgeNode.id.in_(
+                    select(NodeSegmentLink.node_id).where(NodeSegmentLink.video_bvid.in_(bvids))
+                )
+            )
+        )
+        node_map = {n.id: n for n in node_result.scalars().all()}
+
+        videos = []
+        for bvid in bvids:
+            vc = video_map.get(bvid)
+            title = vc.title if vc else bvid
+            # 标记为已编译（知识图谱中有对应数据）
+            videos.append({
+                "bvid": bvid,
+                "title": title,
+                "owner_name": vc.owner_name if vc else "",
+                "description": (vc.description or "")[:200] if vc else "",
+                "duration": vc.duration or 0 if vc else 0,
+                "pic_url": vc.pic_url if vc else None,
+                "folder_names": ["知识图谱"],
+                "folder_titles": ["知识图谱"],
+                "folder_ids": [],
+                "segment_count": 1,
+                "claim_count": 0,
+                "node_count": 1,
+                "knowledge_node_count": 1,
+                "avg_difficulty": 1.0,
+                "value_tier": "主线核心",
+                "organize_score": 50,
+                "reasons": ["知识图谱中已编译"],
+                "content_type": [],
+                "subject_tags": [],
+                "difficulty_level": [],
+                "learning_status": "可复习",
+                "confidence": 0.6,
+                "is_core": True,
+                "duplicate_candidates": [],
+            })
+
+        compiled_count = len(videos)
+        summary = {
+            "total_videos": len(videos),
+            "series_count": 0,
+            "duplicate_group_count": 0,
+            "core_count": compiled_count,
+            "low_value_count": 0,
+            "compiled_count": compiled_count,
+        }
+
+        return {
+            "summary": summary,
+            "videos": videos,
+            "series_groups": [],
+            "duplicate_groups": [],
+            "suggestions": [
+                {
+                    "type": "info",
+                    "title": "知识图谱模式",
+                    "confidence": 0.8,
+                    "description": "当前基于知识图谱数据生成。同步B站收藏夹后可获得完整的收藏整理分析。",
+                    "evidence": ["基于已编译的知识图谱数据", f"涵盖 {len(videos)} 个视频的知识点"],
+                }
+            ],
+            "facet_counts": {},
+            "export_generated_at": datetime.utcnow().isoformat(),
+        }
 
     def _empty_report(self) -> dict[str, Any]:
         return {

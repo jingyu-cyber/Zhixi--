@@ -195,7 +195,7 @@ export default function ChatPage() {
             </svg>
           </div>
           <div>
-            <span className="brand-title">知映 ZhiYing</span>
+            <span className="brand-title">知析 ZhiXi</span>
             <span className="brand-subtitle">AI 对话</span>
           </div>
         </div>

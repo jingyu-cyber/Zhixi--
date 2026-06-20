@@ -4,11 +4,12 @@ BiliMind 知识树学习导航系统
 """
 import re
 import json
+from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.responses import StreamingResponse
 from loguru import logger
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from openai import OpenAI
 from langchain_core.documents import Document
@@ -17,6 +18,7 @@ from app.database import get_db
 from app.models import (
     ChatRequest, ChatResponse, FavoriteFolder, FavoriteVideo, VideoCache,
     KnowledgeNode, NodeSegmentLink, Segment, _fmt_time,
+    Conversation, ChatMessage, ConversationResponse, ConversationDetailResponse,
 )
 from app.config import settings
 from app.routers.knowledge import get_rag_service, get_graph
@@ -45,9 +47,12 @@ def _get_graph_rag() -> GraphRAGService:
 
 async def _load_request_graph(db: AsyncSession, session_id: Optional[str]) -> "GraphStore":
     from app.services.graph_store import GraphStore
+    from app.utils import resolve_owner_mid as _resolve_owner_mid
 
+    owner_mid = await _resolve_owner_mid(db, session_id)
     graph = GraphStore()
-    await graph.load_from_db(db, session_id=session_id)
+    # 演示/共享用户 (owner_mid=None) 加载全部知识图谱；真实用户按 owner_mid 隔离
+    await graph.load_from_db(db, session_id=session_id, owner_mid=owner_mid)
     return graph
 
 def _get_llm_client() -> OpenAI:
@@ -169,6 +174,54 @@ def _build_db_summary_messages(context: str, question: str) -> list[dict]:
         {"role": "system", "content": system},
         {"role": "user", "content": question},
     ]
+
+
+def _build_knowledge_context(nodes: list[dict], graph) -> str:
+    """从知识图谱节点构建回答上下文"""
+    parts = []
+    for n in nodes:
+        name = n.get("name", "")
+        ntype = n.get("node_type", "concept")
+        definition = n.get("definition", "")
+        difficulty = n.get("difficulty", 1)
+        parts.append(f"- [{ntype.upper()}] {name} (难度:{'●'*difficulty})")
+        if definition:
+            parts.append(f"  定义: {definition}")
+        # 获取前置知识
+        prereqs = graph.get_prerequisites(n["id"])
+        if prereqs:
+            parts.append(f"  前置知识: {', '.join(p.get('name','') for p in prereqs[:3])}")
+        # 获取后续知识
+        successors = graph.get_successors(n["id"])
+        if successors:
+            parts.append(f"  后续知识: {', '.join(s.get('name','') for s in successors[:3])}")
+    return "\n".join(parts)
+
+
+async def _build_knowledge_sources(nodes: list[dict], db: AsyncSession) -> list[dict]:
+    """从知识图谱节点构建来源信息"""
+    sources = []
+    seen_bvids = set()
+    for n in nodes:
+        # 查询关联的视频
+        links_result = await db.execute(
+            select(NodeSegmentLink.video_bvid)
+            .where(NodeSegmentLink.node_id == n["id"])
+            .limit(3)
+        )
+        for bvid in links_result.scalars().all():
+            if bvid and bvid not in seen_bvids:
+                seen_bvids.add(bvid)
+                vc_result = await db.execute(
+                    select(VideoCache.title).where(VideoCache.bvid == bvid)
+                )
+                title = vc_result.scalar()
+                sources.append({
+                    "bvid": bvid,
+                    "title": title or "",
+                    "url": f"https://www.bilibili.com/video/{bvid}",
+                })
+    return sources[:10]
 
 
 def _build_graph_messages(context: str, question: str) -> list[dict]:
@@ -477,8 +530,32 @@ async def _prepare_messages(request: ChatRequest, db: AsyncSession) -> tuple[lis
     if is_general:
         route_type = "direct"
 
-    # 3) 无数据时处理
+    # 3) 无视频数据时尝试使用知识图谱回答
     if not has_data:
+        # 尝试从知识图谱中搜索相关知识节点
+        try:
+            graph = await _load_request_graph(db, request.session_id)
+            keywords = _extract_keywords(question)
+            matched_nodes = []
+            for kw in keywords:
+                results = graph.search_nodes_by_name(kw, limit=5)
+                matched_nodes.extend(results)
+            if matched_nodes:
+                # 去重
+                seen_ids = set()
+                unique_nodes = []
+                for n in matched_nodes:
+                    if n["id"] not in seen_ids:
+                        seen_ids.add(n["id"])
+                        unique_nodes.append(n)
+                # 构建知识图谱上下文
+                knowledge_context = _build_knowledge_context(unique_nodes[:10], graph)
+                sources = _build_knowledge_sources(unique_nodes[:10], db)
+                messages = _build_graph_messages(knowledge_context, question)
+                return messages, sources, question
+        except Exception as e:
+            logger.warning(f"知识图谱回退失败: {e}")
+
         if is_collection_intent:
             context, sources = await _get_video_context(db, folder_ids, include_content=False, limit=50)
             if not context:
@@ -617,16 +694,189 @@ async def _prepare_messages(request: ChatRequest, db: AsyncSession) -> tuple[lis
     context, sources = await _get_video_context(db, folder_ids, include_content=False, limit=50)
     return _build_fallback_messages(context or "（暂无入库信息）", question), sources, question
 
+# ==================== 对话历史 CRUD ====================
+
+async def _resolve_chat_owner_mid(db: AsyncSession, session_id: Optional[str]) -> Optional[int]:
+    from app.utils import resolve_owner_mid as _resolve_owner_mid
+    return await _resolve_owner_mid(db, session_id)
+
+
+async def _get_history_context(db: AsyncSession, conversation_id: int, max_messages: int = 10) -> list[dict]:
+    """获取最近对话历史作为 LLM 上下文"""
+    result = await db.execute(
+        select(ChatMessage)
+        .where(ChatMessage.conversation_id == conversation_id)
+        .order_by(ChatMessage.created_at.desc())
+        .limit(max_messages)
+    )
+    msgs = result.scalars().all()
+    msgs.reverse()
+    return [{"role": m.role, "content": m.content} for m in msgs]
+
+
+async def _ensure_conversation(db: AsyncSession, request: ChatRequest) -> Optional[int]:
+    """确保对话存在：使用已有或自动创建"""
+    if request.conversation_id:
+        conv = await db.get(Conversation, request.conversation_id)
+        if conv:
+            conv.updated_at = datetime.utcnow()
+            return conv.id
+    # 自动创建新对话
+    owner_mid = await _resolve_chat_owner_mid(db, request.session_id)
+    title = request.question[:100] if request.question else "新对话"
+    conv = Conversation(
+        session_id=request.session_id,
+        owner_mid=owner_mid,
+        title=title,
+    )
+    db.add(conv)
+    await db.flush()
+    return conv.id
+
+
+async def _save_message(
+    db: AsyncSession,
+    conversation_id: int,
+    role: str,
+    content: str,
+    sources: Optional[list] = None,
+):
+    """保存一条消息到对话"""
+    from datetime import datetime
+    msg = ChatMessage(
+        conversation_id=conversation_id,
+        role=role,
+        content=content,
+        sources_json=sources,
+        created_at=datetime.utcnow(),
+    )
+    db.add(msg)
+    await db.commit()
+
+
+@router.get("/conversations")
+async def list_conversations(
+    session_id: str = Query(..., description="会话ID"),
+    limit: int = Query(20, le=50),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取当前用户的对话列表"""
+    owner_mid = await _resolve_chat_owner_mid(db, session_id)
+    query = select(Conversation)
+    if owner_mid is not None:
+        query = query.where(Conversation.owner_mid == owner_mid)
+    else:
+        query = query.where(Conversation.session_id == session_id)
+    result = await db.execute(
+        query.order_by(Conversation.updated_at.desc()).limit(limit)
+    )
+    conversations = result.scalars().all()
+
+    items = []
+    for conv in conversations:
+        count = await db.scalar(
+            select(func.count()).select_from(ChatMessage).where(ChatMessage.conversation_id == conv.id)
+        )
+        items.append(ConversationResponse(
+            id=conv.id,
+            title=conv.title,
+            created_at=conv.created_at.isoformat() if conv.created_at else "",
+            updated_at=conv.updated_at.isoformat() if conv.updated_at else "",
+            message_count=count or 0,
+        ))
+    return items
+
+
+@router.post("/conversations")
+async def create_conversation(
+    session_id: str = Query(...),
+    title: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """创建新对话"""
+    owner_mid = await _resolve_chat_owner_mid(db, session_id)
+    conv = Conversation(
+        session_id=session_id,
+        owner_mid=owner_mid,
+        title=title or "新对话",
+    )
+    db.add(conv)
+    await db.commit()
+    await db.refresh(conv)
+    return {"id": conv.id, "title": conv.title}
+
+
+@router.get("/conversations/{conversation_id}")
+async def get_conversation(
+    conversation_id: int,
+    session_id: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取对话详情（含所有消息）"""
+    conv = await db.get(Conversation, conversation_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="对话不存在")
+
+    result = await db.execute(
+        select(ChatMessage)
+        .where(ChatMessage.conversation_id == conversation_id)
+        .order_by(ChatMessage.created_at.asc())
+    )
+    messages = result.scalars().all()
+
+    return ConversationDetailResponse(
+        id=conv.id,
+        title=conv.title,
+        messages=[{"id": m.id, "role": m.role, "content": m.content, "sources": m.sources_json, "created_at": m.created_at.isoformat() if m.created_at else ""} for m in messages],
+        created_at=conv.created_at.isoformat() if conv.created_at else "",
+        updated_at=conv.updated_at.isoformat() if conv.updated_at else "",
+    )
+
+
+@router.delete("/conversations/{conversation_id}")
+async def delete_conversation(
+    conversation_id: int,
+    session_id: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """删除对话"""
+    conv = await db.get(Conversation, conversation_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="对话不存在")
+    # 删除关联消息
+    await db.execute(delete(ChatMessage).where(ChatMessage.conversation_id == conversation_id))
+    await db.delete(conv)
+    await db.commit()
+    return {"message": "对话已删除"}
+
+
+# ==================== 智能问答 ====================
+
 @router.post("/ask", response_model=ChatResponse)
 async def ask_question(request: ChatRequest, db: AsyncSession = Depends(get_db)):
-    """智能问答"""
+    """智能问答（支持对话持久化）"""
     if not request.question or not request.question.strip():
         raise HTTPException(status_code=400, detail="问题不能为空")
     try:
         messages, sources, _ = await _prepare_messages(request, db)
+
+        # 注入对话历史上下文
+        if request.conversation_id:
+            history = await _get_history_context(db, request.conversation_id)
+            messages = history + messages
+
         client = _get_llm_client()
         response = client.chat.completions.create(model=settings.llm_model, messages=messages, temperature=0.5)
-        return ChatResponse(answer=response.choices[0].message.content or "", sources=sources[:5])
+        answer = response.choices[0].message.content or ""
+
+        # 持久化消息
+        if request.session_id:
+            conv_id = await _ensure_conversation(db, request)
+            if conv_id:
+                await _save_message(db, conv_id, "user", request.question)
+                await _save_message(db, conv_id, "assistant", answer, sources[:5])
+
+        return ChatResponse(answer=answer, sources=sources[:5])
     except HTTPException: raise
     except Exception as e:
         logger.error(f"问答失败: {e}")
@@ -634,18 +884,45 @@ async def ask_question(request: ChatRequest, db: AsyncSession = Depends(get_db))
 
 @router.post("/ask/stream")
 async def ask_question_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
-    """流式问答"""
+    """流式问答（支持对话历史）"""
     if not request.question or not request.question.strip():
         raise HTTPException(status_code=400, detail="问题不能为空")
     try:
         messages, sources, _ = await _prepare_messages(request, db)
+
+        # 注入对话历史上下文
+        if request.conversation_id:
+            history = await _get_history_context(db, request.conversation_id)
+            messages = history + messages
+
+        # 持久化用户消息
+        conv_id = None
+        if request.session_id:
+            conv_id = await _ensure_conversation(db, request)
+            if conv_id:
+                await _save_message(db, conv_id, "user", request.question)
+
+        final_conv_id = conv_id
         client = _get_llm_client()
-        def generate():
+        full_answer_chunks: list[str] = []
+
+        async def generate():
             stream = client.chat.completions.create(model=settings.llm_model, messages=messages, temperature=0.5, stream=True)
             for chunk in stream:
                 delta = chunk.choices[0].delta
-                if delta and delta.content: yield delta.content
+                if delta and delta.content:
+                    full_answer_chunks.append(delta.content)
+                    yield delta.content
+            # 流结束后保存 assistant 消息
+            full_answer = "".join(full_answer_chunks)
+            if final_conv_id and full_answer:
+                try:
+                    await _save_message(db, final_conv_id, "assistant", full_answer, sources[:5])
+                except Exception as e:
+                    logger.warning(f"流式回答保存失败: {e}")
             yield f"\n[[SOURCES_JSON]]{json.dumps(sources, ensure_ascii=False)}"
+            yield f"\n[[CONVERSATION_ID]]{final_conv_id or ''}"
+
         return StreamingResponse(generate(), media_type="text/plain; charset=utf-8")
     except HTTPException: raise
     except Exception as e:

@@ -252,5 +252,5 @@ export default function FallingPetals() {
 
   if (!enabled) return null;
 
-  return <canvas ref={canvasRef} style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:0 }} />;
+  return <canvas ref={canvasRef} style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:99999 }} />;
 }

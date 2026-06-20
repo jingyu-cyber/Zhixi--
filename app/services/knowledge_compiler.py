@@ -581,6 +581,12 @@ async def compile_video(
                 logger.info(f"[{bvid}] 创建 VideoCache 记录")
         except Exception as e:
             logger.warning(f"[{bvid}] 创建 VideoCache 失败: {e}")
+    elif video_cache and owner_mid is not None and video_cache.owner_mid != owner_mid:
+        # 已有记录但属于其他用户 → 更新为当前用户的 owner_mid
+        video_cache.owner_mid = owner_mid
+        video_cache.session_id = session_id
+        await db.flush()
+        logger.info(f"[{bvid}] 更新 VideoCache owner_mid: {video_cache.owner_mid}")
 
     video_title = video_cache.title if video_cache else "未知标题"
     video_duration = video_cache.duration if video_cache else None
@@ -667,6 +673,7 @@ async def compile_video(
             confidence=seg.get("confidence", 0.5),
             extraction_status="pending",
             session_id=session_id,
+            owner_mid=owner_mid,
         )
         db.add(record)
         segment_records.append(record)
@@ -730,6 +737,7 @@ async def compile_video(
         else:
             concept_row = Concept(
                 session_id=session_id,
+                owner_mid=owner_mid,
                 name=cdata["name"],
                 normalized_name=norm_name,
                 definition=cdata["definition"],
@@ -753,6 +761,7 @@ async def compile_video(
 
             claim_row = Claim(
                 session_id=session_id,
+                owner_mid=owner_mid,
                 concept_id=concept_row.id,
                 statement=cl["statement"],
                 claim_type=cl["type"],

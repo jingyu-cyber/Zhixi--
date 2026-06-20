@@ -89,7 +89,7 @@ function LearningPathContent() {
             </svg>
           </div>
           <div>
-            <span className="brand-title">知映 ZhiYing</span>
+            <span className="brand-title">知析 ZhiXi</span>
             <span className="brand-subtitle">学习路径</span>
           </div>
         </div>

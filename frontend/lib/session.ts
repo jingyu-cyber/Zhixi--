@@ -1,5 +1,5 @@
 /**
- * BiliMind 知映 ZhiYing — 前端会话管理
+ * BiliMind 知析 ZhiXi — 前端会话管理
  *
  * 管理 B站登录后的 session_id 持久化、用户信息存储、
  * 知识构建任务快照、以及 React Hook 封装。

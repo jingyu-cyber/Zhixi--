@@ -146,7 +146,13 @@ class TreeBuilder:
 
             if remaining:
                 orphan_children = []
-                for orphan in sorted(remaining,
+                # 按名称去重：同名孤儿节点只保留 source_count 最高的
+                seen_orphan_names: dict[str, dict] = {}
+                for orphan in remaining:
+                    key = (orphan.get("normalized_name") or orphan.get("name", "")).strip().lower()
+                    if key not in seen_orphan_names or orphan.get("source_count", 0) > seen_orphan_names[key].get("source_count", 0):
+                        seen_orphan_names[key] = orphan
+                for orphan in sorted(seen_orphan_names.values(),
                                      key=lambda n: (self._grade_sort_key(n), n.get("difficulty", 1),
                                                     -n.get("source_count", 0), n.get("name", ""))):
                     orphan_children.append(self._make_tree_node(orphan, []))
@@ -187,7 +193,7 @@ class TreeBuilder:
         }
 
     def _determine_topics(self, qualified: list[dict], qualified_ids: set[int]) -> list[dict]:
-        """确定一级主题"""
+        """确定一级主题（按 normalized_name 去重，每个唯一主题只保留一个节点）"""
         topics = [n for n in qualified if n.get("node_type") == "topic"]
 
         if not topics:
@@ -196,6 +202,16 @@ class TreeBuilder:
                 top = concepts[0]
                 top["node_type"] = "topic"
                 topics = [top]
+
+        # 按 normalized_name 去重：同名主题取 source_count 最高的
+        seen_names = {}
+        for topic in topics:
+            norm_name = topic.get("normalized_name", topic.get("name", "")).strip()
+            if not norm_name:
+                continue
+            if norm_name not in seen_names or topic.get("source_count", 0) > seen_names[norm_name].get("source_count", 0):
+                seen_names[norm_name] = topic
+        topics = list(seen_names.values())
 
         for topic in topics:
             children = self.graph.get_children(topic["id"])
@@ -244,26 +260,30 @@ class TreeBuilder:
         return remaining
 
     def _build_subtree(self, parent_id: int, node_map: dict, qualified_ids: set, assigned: set) -> list[dict]:
-        """递归构建子树"""
+        """递归构建子树（按名称去重，同名节点只保留 source_count 最高的）"""
         children_raw = self.graph.get_children(parent_id)
-        children = []
 
+        # 按显示名称去重：同名节点只保留 source_count 最高的
+        seen_names: dict[str, dict] = {}
         for child in children_raw:
             cid = child["id"]
             if cid not in qualified_ids or cid == parent_id:
                 continue
-
             node = node_map.get(cid)
             if not node:
                 continue
+            name_key = (node.get("normalized_name") or node.get("name", "")).strip().lower()
+            if name_key not in seen_names or node.get("source_count", 0) > seen_names[name_key].get("source_count", 0):
+                seen_names[name_key] = node
 
+        children = []
+        for node in seen_names.values():
+            cid = node["id"]
             is_reference = cid in assigned
             assigned.add(cid)
-
             sub_children = []
             if not is_reference:
                 sub_children = self._build_subtree(cid, node_map, qualified_ids, assigned)
-
             tree_node = self._make_tree_node(node, sub_children, is_reference=is_reference)
             children.append(tree_node)
 

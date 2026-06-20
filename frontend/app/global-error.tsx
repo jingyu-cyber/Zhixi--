@@ -41,7 +41,7 @@ export default function GlobalError({
               lineHeight: 1.6,
             }}
           >
-            抱歉，知映 ZhiYing 遇到了意外错误。请尝试刷新页面。
+            抱歉，知析 ZhiXi 遇到了意外错误。请尝试刷新页面。
             {error.digest && (
               <span style={{ display: "block", marginTop: 8, fontSize: 12, color: "#9ca3af" }}>
                 错误 ID: {error.digest}

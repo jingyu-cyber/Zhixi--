@@ -5,8 +5,9 @@ import AppShell from "@/components/AppShell";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "知映 ZhiYing — 个人视频知识导航系统",
-  description: "基于 B 站收藏视频自动构建知识树、规划学习路径、追溯视频片段证据的个人知识导航系统",
+  title: "知析 ZhiXi — 个人视频知识导航系统",
+  description: "基于 B 站收藏视频自动构建知识树、规划学习路径、追溯视频片段证据 — AI 驱动的个人视频知识引擎",
+  icons: { icon: "/favicon.svg" },
 };
 
 export default function RootLayout({

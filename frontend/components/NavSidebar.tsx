@@ -14,6 +14,7 @@ export default function NavSidebar() {
     { href: "/learning-path", label: "学习路径", icon: "learning", primary: false },
     { href: "/organizer", label: "整理中心", icon: "organizer", primary: false },
     { href: "/game", label: "知识对战", icon: "game", primary: false },
+    { href: "/memory", label: "记忆", icon: "memory", primary: false },
     { href: "/review", label: "复习", icon: "review", primary: false },
   ];
 
@@ -78,6 +79,12 @@ export default function NavSidebar() {
         <circle cx="9" cy="15" r="1.2" />
         <circle cx="15" cy="15" r="1.2" />
         <path d="M12 14v3" />
+      </svg>
+    ),
+    memory: (
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M12 2a10 10 0 1010 10A10 10 0 0012 2z" />
+        <path d="M12 6v6l4 2" />
       </svg>
     ),
     review: (

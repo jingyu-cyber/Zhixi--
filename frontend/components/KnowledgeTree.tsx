@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
-import { treeApi, TreeNode, TreeResponse, treeMemoryApi, TreeMemorySummary } from "@/lib/api";
+import { treeApi, TreeNode, TreeResponse, treeMemoryApi, TreeMemorySummary, memoryApi, MemoryStats, MemoryDecayCheck } from "@/lib/api";
 import { isActiveSession } from "@/lib/session";
 
 interface TreeNodeItemProps {
@@ -135,6 +135,15 @@ export default function KnowledgeTree({ sessionId, onNodeSelect, selectedNodeId 
   const [topicFilter, setTopicFilter] = useState<number | undefined>(undefined);
   const [memoryLayerFilter, setMemoryLayerFilter] = useState("");
   const [memorySummary, setMemorySummary] = useState<TreeMemorySummary | null>(null);
+
+  // 记忆系统状态
+  const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
+  const [memoryDecay, setMemoryDecay] = useState<MemoryDecayCheck | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState("");
+  const [showMemoryPanel, setShowMemoryPanel] = useState(false);
+  const memoryCheckedRef = useRef(false);
+
   const requestIdRef = useRef(0);
 
   useEffect(() => {
@@ -145,8 +154,38 @@ export default function KnowledgeTree({ sessionId, onNodeSelect, selectedNodeId 
     setTopicFilter(undefined);
     setMemoryLayerFilter("");
     setMemorySummary(null);
+    setMemoryStats(null);
+    setMemoryDecay(null);
+    setSyncMsg("");
+    setShowMemoryPanel(false);
+    memoryCheckedRef.current = false;
     setLoading(!!sessionId);
   }, [sessionId]);
+
+  // 同步到记忆系统
+  const handleSync = useCallback(() => {
+    setSyncing(true);
+    setSyncMsg("");
+    memoryApi.syncFromKnowledge()
+      .then((r) => {
+        setSyncMsg(`同步完成: 新增 ${r.created} 个，跳过 ${r.skipped} 个`);
+        // 刷新记忆状态
+        loadMemoryState();
+      })
+      .catch((e) => setSyncMsg(`同步失败: ${e.message}`))
+      .finally(() => setSyncing(false));
+  }, []);
+
+  // 加载记忆状态
+  const loadMemoryState = useCallback(() => {
+    Promise.all([
+      memoryApi.getStats().catch(() => null),
+      memoryApi.checkDecay().catch(() => null),
+    ]).then(([s, d]) => {
+      setMemoryStats(s);
+      setMemoryDecay(d);
+    });
+  }, []);
 
   useEffect(() => {
     if (!sessionId) {
@@ -191,7 +230,20 @@ export default function KnowledgeTree({ sessionId, onNodeSelect, selectedNodeId 
         if (isActiveSession(activeSessionId)) setMemorySummary(summary);
       })
       .catch(() => {});
-  }, [sessionId, stageFilter, topicFilter, memoryLayerFilter]);
+
+    // 加载全局记忆状态（仅首次）
+    if (!memoryCheckedRef.current) {
+      memoryCheckedRef.current = true;
+      loadMemoryState();
+    }
+  }, [sessionId, stageFilter, topicFilter, memoryLayerFilter, loadMemoryState]);
+
+  // 自动同步：知识树有数据但记忆为空时自动初始化
+  useEffect(() => {
+    if (data && data.tree.length > 0 && memoryStats && memoryStats.total_nodes === 0 && !syncing) {
+      handleSync();
+    }
+  }, [data, memoryStats, syncing, handleSync]);
 
   if (loading) return <div className="loading-state">加载知识树中...</div>;
   if (!data || data.tree.length === 0) {
@@ -205,6 +257,21 @@ export default function KnowledgeTree({ sessionId, onNodeSelect, selectedNodeId 
   }
 
   const topics = data.tree.filter(n => n.node_type === "topic" && n.id > 0);
+
+  // 记忆面板数据
+  const totalMemory = memoryStats?.total_nodes ?? 0;
+  const longPct = totalMemory > 0 ? Math.round((memoryStats?.long_term_count ?? 0) / totalMemory * 100) : 0;
+  const shortPct = totalMemory > 0 ? Math.round((memoryStats?.short_term_count ?? 0) / totalMemory * 100) : 0;
+  const workingPct = totalMemory > 0 ? 100 - longPct - shortPct : 0;
+  const decayPct = memoryDecay && memoryDecay.total > 0
+    ? Math.round(memoryDecay.stable_count / memoryDecay.total * 100)
+    : 100;
+
+  const layerBars = [
+    { label: "长期", count: memoryStats?.long_term_count ?? 0, pct: longPct, color: "#6366f1", icon: "🧠" },
+    { label: "短期", count: memoryStats?.short_term_count ?? 0, pct: shortPct, color: "#94a3b8", icon: "📋" },
+    { label: "工作", count: memoryStats?.working_count ?? 0, pct: workingPct, color: "#22d3ee", icon: "⚡" },
+  ];
 
   return (
     <>
@@ -277,7 +344,7 @@ export default function KnowledgeTree({ sessionId, onNodeSelect, selectedNodeId 
         </select>
       </div>
 
-      {/* 记忆状态摘要条 */}
+      {/* 记忆状态摘要条 + 同步按钮 */}
       {memorySummary && (
         <div className="memory-summary-bar" style={{
           display: "flex", gap: 12, padding: "6px 10px", fontSize: 12,
@@ -301,6 +368,125 @@ export default function KnowledgeTree({ sessionId, onNodeSelect, selectedNodeId 
             <span title="需复习" style={{ color: "#f59e0b" }}>
               ⚠ {memorySummary.memory_summary.needs_review} 需复习
             </span>
+          )}
+
+          {/* 同步 & 面板按钮 */}
+          <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+            <button
+              onClick={handleSync}
+              disabled={syncing}
+              title="将知识树数据同步到记忆系统"
+              style={{
+                fontSize: 11, padding: "2px 10px", borderRadius: 4,
+                background: syncing ? "var(--border-color)" : "#6366f1",
+                color: "#fff", border: "none", cursor: syncing ? "wait" : "pointer",
+              }}
+            >
+              {syncing ? "同步中..." : "🔄 同步记忆"}
+            </button>
+            {totalMemory > 0 && (
+              <button
+                onClick={() => setShowMemoryPanel(!showMemoryPanel)}
+                title="展开记忆健康面板"
+                style={{
+                  fontSize: 11, padding: "2px 8px", borderRadius: 4,
+                  background: showMemoryPanel ? "#6366f1" : "var(--border-color, #e2e8f0)",
+                  color: showMemoryPanel ? "#fff" : "var(--text-secondary)", border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                {showMemoryPanel ? "▲ 收起" : "📊 记忆详情"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      {syncMsg && (
+        <p style={{ fontSize: 11, color: "var(--accent-green)", margin: "0 0 8px 0", padding: "0 10px" }}>
+          {syncMsg}
+        </p>
+      )}
+
+      {/* 记忆健康面板（可展开） */}
+      {showMemoryPanel && memoryStats && totalMemory > 0 && (
+        <div style={{
+          padding: "10px 14px", fontSize: 12, marginBottom: 8,
+          background: "var(--surface, #fff)", borderRadius: 8,
+          border: "1px solid var(--border-color, #e2e8f0)",
+        }}>
+          {/* 层级分布 */}
+          <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+            {layerBars.map((l) => (
+              <div key={l.label} style={{ flex: 1, textAlign: "center" }}>
+                <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{l.icon} {l.label}</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: l.color }}>{l.count}</div>
+                <div style={{ fontSize: 10, color: "var(--text-tertiary)" }}>{l.pct}%</div>
+              </div>
+            ))}
+            <div style={{ flex: 1, textAlign: "center" }}>
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>📊 健康度</div>
+              <div style={{
+                fontSize: 18, fontWeight: 700,
+                color: decayPct >= 80 ? "#22c55e" : decayPct >= 50 ? "#f59e0b" : "#ef4444",
+              }}>
+                {decayPct}%
+              </div>
+              <div style={{ fontSize: 10, color: "var(--text-tertiary)" }}>稳定</div>
+            </div>
+            <div style={{ flex: 1, textAlign: "center" }}>
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>⚠ 待复习</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "#f59e0b" }}>
+                {memoryDecay?.needs_review_count ?? 0}
+              </div>
+              <div style={{ fontSize: 10, color: "var(--text-tertiary)" }}>项</div>
+            </div>
+          </div>
+
+          {/* 需复习列表 */}
+          {memoryDecay && memoryDecay.needs_review.length > 0 && (
+            <div style={{ marginBottom: 6 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: "#f59e0b" }}>
+                ⚠ 需要复习 ({memoryDecay.needs_review_count})
+              </span>
+              <div style={{ maxHeight: 120, overflowY: "auto", fontSize: 11, marginTop: 4 }}>
+                {memoryDecay.needs_review.slice(0, 12).map((item) => (
+                  <div key={item.id} style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    padding: "2px 6px", marginBottom: 2, borderRadius: 3,
+                    background: "var(--surface-hover, #f8fafc)",
+                  }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {item.name}
+                    </span>
+                    <span style={{
+                      marginLeft: 8, fontSize: 10, fontWeight: 600,
+                      color: item.strength < 0.2 ? "#ef4444" : "#f59e0b",
+                    }}>
+                      {Math.round(item.strength * 100)}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 已遗忘 */}
+          {memoryDecay && memoryDecay.forgotten.length > 0 && (
+            <div>
+              <span style={{ fontSize: 11, fontWeight: 600, color: "#ef4444" }}>
+                💀 已遗忘 ({memoryDecay.forgotten_count})
+              </span>
+              <div style={{ maxHeight: 80, overflowY: "auto", fontSize: 10, opacity: 0.65, marginTop: 4 }}>
+                {memoryDecay.forgotten.slice(0, 8).map((item) => (
+                  <div key={item.id} style={{
+                    padding: "1px 6px", marginBottom: 1,
+                    textDecoration: "line-through", color: "var(--text-tertiary)",
+                  }}>
+                    {item.name} ({Math.round(item.strength * 100)}%)
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -329,6 +515,12 @@ export default function KnowledgeTree({ sessionId, onNodeSelect, selectedNodeId 
         {memorySummary && (
           <span style={{ color: "#6366f1" }}>
             {memorySummary.memory_summary.strong} 强记忆
+          </span>
+        )}
+        {totalMemory > 0 && (
+          <span style={{ color: "#6366f1", cursor: "pointer" }}
+            onClick={() => setShowMemoryPanel(!showMemoryPanel)}>
+            🧠 {totalMemory} 记忆节点
           </span>
         )}
       </div>

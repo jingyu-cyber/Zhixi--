@@ -653,6 +653,65 @@ async def get_tree_stats(
     }
 
 
+@router.get("/memory-layer")
+async def get_tree_by_memory_layer(
+    layer: str = Query(..., description="记忆层级: working / short_term / long_term"),
+    min_confidence: Optional[float] = Query(None, description="最低置信度"),
+    session_id: Optional[str] = Query(None, description="会话ID"),
+    db: AsyncSession = Depends(get_db),
+):
+    """按记忆层级过滤知识树"""
+    try:
+        gs = await _load_graph_store(db, session_id=session_id)
+        builder = _make_tree_builder(gs)
+        tree_data = builder.build_tree(min_confidence=min_confidence)
+
+        if layer not in ("working", "short_term", "long_term"):
+            raise HTTPException(status_code=400, detail="layer 必须为 working / short_term / long_term")
+
+        filtered = builder.filter_by_memory_layer(tree_data["tree"], layer)
+        await _fill_video_counts(filtered, db, session_id=session_id)
+
+        topic_count = len(filtered)
+        node_count = sum(f.get("node_count", 0) for f in filtered)
+        return {
+            "tree": filtered,
+            "stats": {
+                **tree_data["stats"],
+                "total_topics": topic_count,
+                "total_nodes": node_count,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取记忆层级知识树失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/memory-summary")
+async def get_tree_memory_summary(
+    min_confidence: Optional[float] = Query(None, description="最低置信度"),
+    session_id: Optional[str] = Query(None, description="会话ID"),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取知识树记忆状态摘要"""
+    try:
+        gs = await _load_graph_store(db, session_id=session_id)
+        builder = _make_tree_builder(gs)
+        tree_data = builder.build_tree(min_confidence=min_confidence)
+
+        memory_summary = builder.get_memory_summary(tree_data["tree"])
+
+        return {
+            "tree_stats": tree_data["stats"],
+            "memory_summary": memory_summary,
+        }
+    except Exception as e:
+        logger.error(f"获取记忆摘要失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/pending")
 async def get_pending_nodes(
     limit: int = Query(50, le=200),

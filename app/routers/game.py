@@ -176,7 +176,7 @@ async def submit_answer(
 
 @router.get("/stats")
 async def get_stats(
-    session_id: str = Query(..., description="会话ID"),
+    session_id: str = Query("00000000-0000-0000-0000-000000000000", description="会话ID"),
     db: AsyncSession = Depends(get_db),
 ):
     """获取用户游戏统计"""

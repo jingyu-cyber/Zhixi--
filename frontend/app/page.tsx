@@ -182,7 +182,7 @@ export default function Home() {
             )}
           </button>
           <button
-            onClick={() => setShowLogin(true)}
+            onClick={() => router.push("/workspace")}
             className="btn btn-primary"
           >
             扫码登录
@@ -218,9 +218,9 @@ export default function Home() {
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
           <button
             className="zhiying-cta"
-            onClick={() => setShowLogin(true)}
+            onClick={() => router.push("/workspace")}
           >
-            开始使用
+            进入工作台
           </button>
           <button
             onClick={onDemoLogin}

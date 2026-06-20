@@ -23,7 +23,7 @@ class ReviewRequest(BaseModel):
 
 @router.get("/due")
 async def due_reviews(
-    session_id: str = Query(..., description="会话ID"),
+    session_id: str = Query("", description="会话ID"),
     db: AsyncSession = Depends(get_db),
 ):
     """获取待复习的知识点列表"""
@@ -46,7 +46,7 @@ async def submit_review(
 
 @router.get("/stats")
 async def srs_stats(
-    session_id: str = Query(..., description="会话ID"),
+    session_id: str = Query("", description="会话ID"),
     db: AsyncSession = Depends(get_db),
 ):
     """获取 SRS 统计信息"""

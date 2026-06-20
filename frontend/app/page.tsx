@@ -69,6 +69,7 @@ export default function Home() {
     if (typeof window !== "undefined") {
       localStorage.setItem("bilimind_remember", "1");
     }
+    setAuthSession(sid, info.uname);
     router.push("/workspace");
   };
 
@@ -182,7 +183,7 @@ export default function Home() {
             )}
           </button>
           <button
-            onClick={() => router.push("/workspace")}
+            onClick={() => setShowLogin(true)}
             className="btn btn-primary"
           >
             扫码登录
@@ -220,7 +221,7 @@ export default function Home() {
             className="zhiying-cta"
             onClick={() => router.push("/workspace")}
           >
-            进入工作台
+            开始使用
           </button>
           <button
             onClick={onDemoLogin}

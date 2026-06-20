@@ -68,7 +68,7 @@ export default function SearchPage() {
     <div className="app-shell">
       <header className="app-topbar">
         <div className="brand">
-          <span className="brand-title">知映 ZhiYing</span>
+          <span className="brand-title">知析 ZhiXi</span>
           <span className="brand-subtitle">搜索</span>
         </div>
         <div className="topbar-actions">

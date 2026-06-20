@@ -249,7 +249,7 @@ export default function TreePage() {
             </svg>
           </div>
           <div>
-            <span className="brand-title">知映 ZhiYing</span>
+            <span className="brand-title">知析 ZhiXi</span>
             <span className="brand-subtitle">知识树</span>
           </div>
         </div>

@@ -97,16 +97,26 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: Props) {
           ✕
         </button>
 
-        <div className="mt-4 flex justify-center">
+        <div className="modal-qr-area">
           {status === "loading" && (
-            <div className="w-48 h-48 flex items-center justify-center border border-dashed border-[var(--border)] rounded-2xl">
-              <div className="w-8 h-8 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
+            <div className="modal-qr-box">
+              <div className="w-10 h-10 border-2 border-[var(--primary)] border-t-transparent rounded-full animate-spin" />
             </div>
           )}
 
           {(status === "ready" || status === "scanned") && qr && (
-            <div className="relative">
-              <img src={qr.qrcode_image_base64} alt="二维码" className="w-48 h-48 rounded-2xl border border-[var(--border)]" />
+            <div className="modal-qr-box relative">
+              <img src={qr.qrcode_image_base64} alt="二维码" className="modal-qr-img" />
+              {/* 刷新按钮 - 圆形循环图标 */}
+              <button
+                onClick={getQR}
+                className="modal-qr-refresh"
+                title="刷新二维码"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+                </svg>
+              </button>
               {status === "scanned" && (
                 <div className="absolute inset-0 bg-white/90 rounded-2xl flex flex-col items-center justify-center">
                   <div className="status-pill">已扫码</div>
@@ -116,24 +126,15 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: Props) {
             </div>
           )}
 
-          {/* 刷新二维码按钮 */}
-          {(status === "ready" || status === "scanned") && (
-            <div className="mt-2 text-center">
-              <button onClick={getQR} className="text-xs text-[var(--muted)] hover:text-[var(--primary)] transition-colors">
-                刷新二维码
-              </button>
-            </div>
-          )}
-
           {status === "success" && (
-            <div className="w-48 h-48 flex flex-col items-center justify-center">
+            <div className="modal-qr-box flex flex-col items-center justify-center">
               <div className="status-pill">登录成功</div>
               <p className="text-sm text-[var(--muted)] mt-3">正在进入工作台</p>
             </div>
           )}
 
           {status === "error" && (
-            <div className="w-48 h-48 flex flex-col items-center justify-center">
+            <div className="modal-qr-box flex flex-col items-center justify-center">
               <p className="text-sm text-[var(--muted)] mb-3 text-center leading-relaxed">
                 {qrError || "二维码已过期"}
               </p>

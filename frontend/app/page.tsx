@@ -189,6 +189,18 @@ export default function Home() {
 
   return (
     <div className="zhiying-landing">
+      {/* 视频背景 */}
+      <div className="landing-video-bg">
+        <video
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="auto"
+          src="/background.mp4"
+          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+        />
+      </div>
       {/* Session expired toast */}
       {sessionExpiredMsg && (
         <div
@@ -263,7 +275,7 @@ export default function Home() {
               letterSpacing: 0.5,
             }}
           >
-            知映 ZhiYing
+            知析 ZhiXi
           </span>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -316,7 +328,7 @@ export default function Home() {
           <span className="highlight">可检索的知识库</span>
         </h1>
         <p>
-          知映从你的 B 站收藏视频中自动抽取概念和论断，构建结构化知识图谱，
+          知析从你的 B 站收藏视频中自动抽取概念和论断，构建结构化知识图谱，
           让每一条观点都能追溯到视频中的具体时刻。
         </p>
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
@@ -429,7 +441,7 @@ export default function Home() {
           backdropFilter: "blur(8px)",
         }}
       >
-        <p>知映 ZhiYing &copy; 2026</p>
+        <p>知析 ZhiXi &copy; 2026</p>
         <p style={{ marginTop: 4, fontSize: 11 }}>个人视频知识导航系统 · 把视频变成可检索的知识库</p>
       </footer>
 

@@ -50,6 +50,7 @@ export default function WorkspacePage() {
   const [batchTaskId, setBatchTaskId] = useState<string | null>(null);
   const [batchProgress, setBatchProgress] = useState(0);
   const [batchMessage, setBatchMessage] = useState("");
+  const [videoLoadError, setVideoLoadError] = useState("");
   const listRequestIdRef = useRef(0);
   const resultRequestIdRef = useRef(0);
   const compilePollIdRef = useRef(0);
@@ -107,17 +108,18 @@ export default function WorkspacePage() {
             // Skip failed folders
           }
         }
-        if (listRequestIdRef.current === requestId && isActiveSession(activeSessionId)) {
+        if (listRequestIdRef.current === requestId) {
           setVideos(allVideos);
         }
       })
-      .catch(() => {
-        if (listRequestIdRef.current === requestId && isActiveSession(activeSessionId)) {
+      .catch((err) => {
+        if (listRequestIdRef.current === requestId) {
           setVideos([]);
+          setVideoLoadError(err?.message || String(err) || "视频列表加载失败");
         }
       })
       .finally(() => {
-        if (listRequestIdRef.current === requestId && isActiveSession(activeSessionId)) {
+        if (listRequestIdRef.current === requestId) {
           setLoadingVideos(false);
         }
       });
@@ -294,7 +296,7 @@ export default function WorkspacePage() {
             </svg>
           </div>
           <div>
-            <span className="brand-title">知映 ZhiYing</span>
+            <span className="brand-title">知析 ZhiXi</span>
             <span className="brand-subtitle">知识工作台</span>
           </div>
         </div>
@@ -372,8 +374,18 @@ export default function WorkspacePage() {
                 </div>
               ) : videos.length === 0 ? (
                 <div style={{ textAlign: "center", padding: 20, color: "var(--text-tertiary)", fontSize: 13 }}>
-                  <p>暂无视频</p>
-                  <p style={{ marginTop: 4, fontSize: 12 }}>请先在收藏夹中添加视频</p>
+                  {videoLoadError ? (
+                    <>
+                      <p style={{ color: "var(--danger)", marginBottom: 8 }}>加载失败</p>
+                      <p style={{ fontSize: 12, marginBottom: 12 }}>{videoLoadError}</p>
+                      <button className="btn btn-sm btn-primary" onClick={() => window.location.reload()}>重新加载</button>
+                    </>
+                  ) : (
+                    <>
+                      <p>暂无视频</p>
+                      <p style={{ marginTop: 4, fontSize: 12 }}>请先在收藏夹中添加视频</p>
+                    </>
+                  )}
                 </div>
               ) : (
                 videos.map((v) => (

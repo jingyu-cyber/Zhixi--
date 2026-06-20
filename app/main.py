@@ -52,7 +52,7 @@ logger.add(
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时
-    logger.info("BiliMind 知识树学习导航系统启动中...")
+    logger.info("知析 ZhiXi 知识树学习导航系统启动中...")
     ensure_directories()
     await init_db()
     logger.info("数据库初始化完成")
@@ -65,7 +65,7 @@ async def lifespan(app: FastAPI):
 
 # 创建 FastAPI 应用
 app = FastAPI(
-    title="BiliMind 知识树学习导航系统",
+    title="知析 ZhiXi — 个人视频知识导航系统",
     description="""
 ## 项目简介
 
@@ -85,7 +85,7 @@ app = FastAPI(
 - FastAPI + LangChain + ChromaDB + networkx
 - B站 API (非官方)
     """,
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan
 )
 
@@ -121,8 +121,8 @@ app.include_router(memory.router)
 async def root():
     """API 根路径"""
     return {
-        "message": "BiliMind 知识树学习导航系统",
-        "version": "0.2.0",
+        "message": "知析 ZhiXi — 个人视频知识导航系统",
+        "version": "0.3.0",
         "docs": "/docs",
         "status": "running"
     }
@@ -142,3 +142,4 @@ if __name__ == "__main__":
         port=settings.app_port,
         reload=settings.debug
     )
+

@@ -740,6 +740,7 @@ class VideoOrganizerService:
         bvid_result = await self.db.execute(bvid_query)
         bvids = [row[0] for row in bvid_result.all() if row[0]]
 
+        topics = []
         # 若无 segment links，从 topic 节点名称匹配 video_cache
         if not bvids:
             topic_query = select(KnowledgeNode).where(KnowledgeNode.node_type == "topic")

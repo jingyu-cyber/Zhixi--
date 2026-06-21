@@ -49,6 +49,7 @@ export default function WorkspacePage() {
   const [batchBuilding, setBatchBuilding] = useState(false);
   const [batchTaskId, setBatchTaskId] = useState<string | null>(null);
   const [batchProgress, setBatchProgress] = useState(0);
+  const [chatCollapsed, setChatCollapsed] = useState(false);
   const [batchMessage, setBatchMessage] = useState("");
   const [videoLoadError, setVideoLoadError] = useState("");
   const listRequestIdRef = useRef(0);
@@ -86,23 +87,29 @@ export default function WorkspacePage() {
       .getList(sessionId)
       .then(async (folders: FavoriteFolder[]) => {
         const allVideos: VideoItem[] = [];
-        // Load from first 3 selected folders or default folder
+        // Load from all selected/default folders
         const targetFolders = folders
-          .filter((f) => f.is_selected || f.is_default)
-          .slice(0, 3);
+          .filter((f) => f.is_selected || f.is_default);
 
         for (const folder of targetFolders) {
           try {
-            const resp = await favoritesApi.getVideos(folder.media_id, sessionId, 1);
-            for (const v of resp.videos) {
-              if (!allVideos.find((av) => av.bvid === v.bvid)) {
-                allVideos.push({
-                  bvid: v.bvid,
-                  title: v.title,
-                  duration: v.duration,
-                  owner: v.owner,
-                });
+            // Load all pages
+            let page = 1;
+            let hasMore = true;
+            while (hasMore) {
+              const resp = await favoritesApi.getVideos(folder.media_id, sessionId, page);
+              for (const v of resp.videos) {
+                if (!allVideos.find((av) => av.bvid === v.bvid)) {
+                  allVideos.push({
+                    bvid: v.bvid,
+                    title: v.title,
+                    duration: v.duration,
+                    owner: v.owner,
+                  });
+                }
               }
+              hasMore = resp.has_more;
+              page++;
             }
           } catch {
             // Skip failed folders
@@ -523,9 +530,9 @@ export default function WorkspacePage() {
               </div>
             </div>
 
-            {/* Right: Evidence chat */}
-            <div className="workspace-chat">
-              <EvidenceChat />
+            {/* Evidence chat — inline at bottom of main */}
+            <div className="workspace-chat-inline">
+              <EvidenceChat bvid={selectedBvid} />
             </div>
           </div>
         </div>

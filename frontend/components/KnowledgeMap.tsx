@@ -22,7 +22,15 @@ export default function KnowledgeMap({ compileResult }: KnowledgeMapProps) {
         const { Transformer } = await import("markmap-lib");
         const { Markmap } = await import("markmap-view");
 
-        if (cancelled) return;
+        if (cancelled || !svgRef.current) return;
+
+        // Wait for container to have valid dimensions
+        const rect = svgRef.current.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) {
+          // Retry after a short delay
+          setTimeout(() => { if (!cancelled) renderMap(); }, 200);
+          return;
+        }
 
         // Build markdown from compile result
         const lines: string[] = [];

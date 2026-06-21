@@ -1099,8 +1099,8 @@ async def import_url(
     rag = get_rag_service()
     try:
         rag.delete_video(source_id, session_id=request.session_id)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"[{source_id}] RAG 删除旧数据失败: {e}")
     try:
         chunks = rag.add_video_content(content, session_id=request.session_id)
         logger.info(f"[{source_id}] 向量化完成，块数={chunks}")

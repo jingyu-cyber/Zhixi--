@@ -345,7 +345,7 @@ async def get_node_detail(
             "id": seg.id,
             "start_time": seg.start_time,
             "end_time": seg.end_time,
-            "text": (seg.cleaned_text or seg.raw_text)[:240],
+            "text": (seg.cleaned_text or seg.raw_text or "")[:240],
             "time_label": f"{_fmt_time(seg.start_time)}-{_fmt_time(seg.end_time)}" if seg.start_time is not None else "",
             "match_confidence": round(score, 3),
             "confidence_level": confidence_level_from_score(score),
@@ -487,7 +487,7 @@ async def get_video_detail(
                 "segment_index": seg.segment_index,
                 "start_time": seg.start_time,
                 "end_time": seg.end_time,
-                "text": (seg.cleaned_text or seg.raw_text)[:300],
+                "text": (seg.cleaned_text or seg.raw_text or "")[:300],
                 "summary": seg.summary,
                 "source_type": seg.source_type,
                 "time_label": f"{_fmt_time(seg.start_time)}-{_fmt_time(seg.end_time)}" if seg.start_time is not None else "",
@@ -686,6 +686,73 @@ async def get_tree_stats(
         "total_topics": topic_count or 0,
         "total_videos": video_count or 0,
         "pending_review": pending_count or 0,
+    }
+
+
+@router.get("/memory-summary")
+async def get_memory_summary(
+    session_id: Optional[str] = Query(None, description="会话ID，用于数据隔离"),
+    min_confidence: Optional[float] = Query(None, description="最低置信度阈值"),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取知识树统计 + 记忆系统摘要"""
+    owner_mid = await _resolve_owner_mid(db, session_id)
+
+    # Tree stats
+    conf_threshold = min_confidence or settings.tree_min_confidence
+    if owner_mid is not None:
+        node_count = await db.scalar(select(func.count()).select_from(KnowledgeNode).where(KnowledgeNode.owner_mid == owner_mid))
+        edge_count = await db.scalar(select(func.count()).select_from(KnowledgeEdge).where(KnowledgeEdge.owner_mid == owner_mid))
+        topic_count = await db.scalar(
+            select(func.count()).select_from(KnowledgeNode)
+            .where(KnowledgeNode.node_type == "topic", KnowledgeNode.owner_mid == owner_mid)
+        )
+        low_confidence_count = await db.scalar(
+            select(func.count()).select_from(KnowledgeNode)
+            .where(KnowledgeNode.confidence < conf_threshold, KnowledgeNode.owner_mid == owner_mid)
+        )
+    else:
+        node_count = await db.scalar(select(func.count()).select_from(KnowledgeNode))
+        edge_count = await db.scalar(select(func.count()).select_from(KnowledgeEdge))
+        topic_count = await db.scalar(
+            select(func.count()).select_from(KnowledgeNode)
+            .where(KnowledgeNode.node_type == "topic")
+        )
+        low_confidence_count = await db.scalar(
+            select(func.count()).select_from(KnowledgeNode)
+            .where(KnowledgeNode.confidence < conf_threshold)
+        )
+
+    # Memory summary
+    memory_summary = {
+        "total_nodes": 0, "working": 0, "short_term": 0, "long_term": 0,
+        "avg_strength": 0, "needs_review": 0, "strong": 0,
+    }
+    try:
+        from app.services.memory.store import MemoryStore as _MemoryStore
+        memory_store = _MemoryStore()
+        memory_stats = await memory_store.get_memory_stats(db, owner_mid=owner_mid)
+        if memory_stats:
+            memory_summary["total_nodes"] = memory_stats.total_nodes
+            memory_summary["working"] = memory_stats.working_count
+            memory_summary["short_term"] = memory_stats.short_term_count
+            memory_summary["long_term"] = memory_stats.long_term_count
+            memory_summary["avg_strength"] = round(
+                (memory_stats.avg_strength_working + memory_stats.avg_strength_short_term + memory_stats.avg_strength_long_term) / 3, 3
+            )
+            memory_summary["needs_review"] = memory_stats.needs_review
+            memory_summary["strong"] = memory_stats.strong_count
+    except Exception as e:
+        logger.warning(f"Memory summary fetch failed: {e}")
+
+    return {
+        "tree_stats": {
+            "total_topics": topic_count or 0,
+            "total_nodes": node_count or 0,
+            "total_edges": edge_count or 0,
+            "low_confidence_count": low_confidence_count or 0,
+        },
+        "memory_summary": memory_summary,
     }
 
 

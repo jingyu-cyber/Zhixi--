@@ -24,6 +24,7 @@ router = APIRouter(prefix="/evidence", tags=["证据级问答"])
 class EvidenceAskRequest(BaseModel):
     question: str
     session_id: Optional[str] = None
+    bvid: Optional[str] = None
 
 
 class EvidenceItem(BaseModel):
@@ -52,12 +53,13 @@ async def evidence_ask(request: EvidenceAskRequest, db: AsyncSession = Depends(g
     if not request.question or not request.question.strip():
         raise HTTPException(status_code=400, detail="问题不能为空")
     try:
-        result = await ask_with_evidence(db, request.question.strip(), request.session_id)
+        result = await ask_with_evidence(db, request.question.strip(), request.session_id, bvid=request.bvid)
         return EvidenceAskResponse(**result)
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[EvidenceQA] 问答失败: {e}")
+        import traceback
+        logger.error(f"[EvidenceQA] 问答失败: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"证据级问答失败: {str(e)}")
 
 
@@ -67,7 +69,7 @@ async def evidence_ask_stream(request: EvidenceAskRequest, db: AsyncSession = De
     if not request.question or not request.question.strip():
         raise HTTPException(status_code=400, detail="问题不能为空")
     try:
-        generator = await ask_with_evidence_stream(db, request.question.strip(), request.session_id)
+        generator = await ask_with_evidence_stream(db, request.question.strip(), request.session_id, bvid=request.bvid)
         return StreamingResponse(generator, media_type="text/plain; charset=utf-8")
     except HTTPException:
         raise

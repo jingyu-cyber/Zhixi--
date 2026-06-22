@@ -12,6 +12,7 @@ export default function KnowledgeMap({ compileResult }: KnowledgeMapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dims, setDims] = useState<{ w: number; h: number }>({ w: 800, h: 500 });
 
   useEffect(() => {
     if (!svgRef.current || !containerRef.current || !compileResult) return;
@@ -25,10 +26,12 @@ export default function KnowledgeMap({ compileResult }: KnowledgeMapProps) {
 
         if (cancelled || !svgRef.current || !containerRef.current) return;
 
-        // Use container (visible div) for dimension check, not the display:none SVG
-        const containerRect = containerRef.current.getBoundingClientRect();
-        const h = containerRect.height || (containerRef.current.clientHeight);
-        if (h < 50) {
+        // Get container pixel dimensions
+        const rect = containerRef.current.getBoundingClientRect();
+        const w = Math.max(rect.width || containerRef.current.clientWidth || 800, 200);
+        const h = Math.max(rect.height || containerRef.current.clientHeight || 500, 200);
+
+        if (rect.width < 50 || rect.height < 50) {
           const retries = (window as any).__markmapRetries || 0;
           if (retries < 15) {
             (window as any).__markmapRetries = retries + 1;
@@ -39,6 +42,13 @@ export default function KnowledgeMap({ compileResult }: KnowledgeMapProps) {
           return;
         }
         (window as any).__markmapRetries = 0;
+
+        // Set explicit pixel dimensions on SVG (required by markmap)
+        setDims({ w, h });
+        svgRef.current.setAttribute("width", String(w));
+        svgRef.current.setAttribute("height", String(h));
+        svgRef.current.style.width = w + "px";
+        svgRef.current.style.height = h + "px";
 
         // Build markdown from compile result
         const lines: string[] = [];
@@ -59,22 +69,20 @@ export default function KnowledgeMap({ compileResult }: KnowledgeMapProps) {
         const { root } = transformer.transform(markdown);
 
         // Clear existing content
-        while (svgRef.current && svgRef.current.firstChild) {
+        while (svgRef.current.firstChild) {
           svgRef.current.removeChild(svgRef.current.firstChild);
         }
 
-        if (svgRef.current) {
-          Markmap.create(svgRef.current, {
-            color: (node: any) => {
-              const depth = node.depth || 0;
-              const colors = ["#059669", "#3b82f6", "#8b5cf6", "#f59e0b", "#ef4444"];
-              return colors[depth % colors.length];
-            },
-            paddingX: 16,
-            autoFit: true,
-          }, root);
-          setLoaded(true);
-        }
+        Markmap.create(svgRef.current, {
+          color: (node: any) => {
+            const depth = node.depth || 0;
+            const colors = ["#059669", "#3b82f6", "#8b5cf6", "#f59e0b", "#ef4444"];
+            return colors[depth % colors.length];
+          },
+          paddingX: 16,
+          autoFit: true,
+        }, root);
+        setLoaded(true);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to render mind map");
@@ -113,7 +121,9 @@ export default function KnowledgeMap({ compileResult }: KnowledgeMapProps) {
       )}
       <svg
         ref={svgRef}
-        style={{ width: "100%", height: "100%", display: loaded ? "block" : "none" }}
+        width={dims.w}
+        height={dims.h}
+        style={{ display: loaded ? "block" : "none" }}
       />
     </div>
   );

@@ -548,14 +548,8 @@ export default function WorkspacePage() {
                         </div>
                       )}
 
-                      {/* 普通视频的编译按钮 */}
-                      {!isCourse && (() => {
-                        const hasData = compileResult && (
-                          (compileResult.stats?.concept_count ?? 0) > 0 ||
-                          (compileResult.timeline?.length ?? 0) > 0
-                        );
-                        return selectedBvid === v.bvid && !hasData && !loadingResult;
-                      })() && (
+                      {/* 普通视频的编译按钮 — 始终显示 */}
+                      {!isCourse && selectedBvid === v.bvid && !loadingResult && (
                         <div style={{ padding: "4px 12px 8px" }}>
                           <button
                             className="compile-btn"
@@ -564,7 +558,9 @@ export default function WorkspacePage() {
                           >
                             {compiling === v.bvid
                               ? `编译中... ${Math.round(compileProgress * 100)}%`
-                              : "编译此视频"}
+                              : compileResult && (compileResult.stats?.concept_count ?? 0) > 0
+                                ? "🔄 重新编译"
+                                : "编译此视频"}
                           </button>
                           {compiling === v.bvid && (
                             <div className="progress" style={{ marginTop: 6 }}>

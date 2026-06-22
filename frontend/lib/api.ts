@@ -86,6 +86,8 @@ export interface Video {
     play_count?: number;
     intro?: string;
     is_selected: boolean;
+    content_category?: string;  // course / single_video / short_video / series
+    series_name?: string;
 }
 
 export interface FavoriteVideosResponse {
@@ -835,12 +837,33 @@ export interface OrganizerReport {
 
 // ==================== 知映编译 API ====================
 
+export interface VideoPageInfo {
+  cid: number;
+  page: number;
+  part: string;
+  duration: number;
+}
+
+export interface VideoPagesResponse {
+  bvid: string;
+  title: string;
+  total_duration: number;
+  pages_count: number;
+  pages: VideoPageInfo[];
+}
+
 export const compileApi = {
-  compileVideo: (bvid: string, sessionId: string) =>
+  compileVideo: (bvid: string, sessionId: string, cid?: number, pageTitle?: string) =>
     request<{ task_id: string; message: string }>("/compile/video", {
       method: "POST",
-      body: JSON.stringify({ bvid, session_id: sessionId }),
+      body: JSON.stringify({ bvid, session_id: sessionId, cid, page_title: pageTitle }),
     }),
+  getVideoPages: (bvid: string) => {
+    const params = new URLSearchParams();
+    const sid = getSessionId();
+    if (sid) params.set("session_id", sid);
+    return request<VideoPagesResponse>(`/compile/pages/${bvid}?${params.toString()}`);
+  },
   getStatus: (taskId: string, sessionId?: string) => {
     const params = new URLSearchParams();
     const sid = sessionId || getSessionId();

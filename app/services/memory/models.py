@@ -148,3 +148,5 @@ class MemoryStatsResponse(BaseModel):
     avg_strength_working: float
     avg_strength_short_term: float
     avg_strength_long_term: float
+    needs_review: int = 0
+    strong_count: int = 0

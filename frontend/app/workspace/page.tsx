@@ -13,6 +13,7 @@ import {
   knowledgeApi,
   FavoriteFolder,
   CompileResult,
+  VideoPageInfo,
 } from "@/lib/api";
 import { isActiveSession, useAuthSession } from "@/lib/session";
 import dynamic from "next/dynamic";
@@ -34,6 +35,11 @@ interface VideoItem {
   duration?: number;
   owner?: string;
   compiled?: boolean;
+  content_category?: string;
+  series_name?: string;
+  series_key?: string;
+  series_position?: number;
+  pages_count?: number;
 }
 
 export default function WorkspacePage() {
@@ -52,10 +58,40 @@ export default function WorkspacePage() {
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [batchMessage, setBatchMessage] = useState("");
   const [videoLoadError, setVideoLoadError] = useState("");
+  const [expandedCourses, setExpandedCourses] = useState<Set<string>>(new Set());
+  const [coursePages, setCoursePages] = useState<Record<string, VideoPageInfo[]>>({});
+  const [loadingPages, setLoadingPages] = useState<Set<string>>(new Set());
   const listRequestIdRef = useRef(0);
   const resultRequestIdRef = useRef(0);
   const compilePollIdRef = useRef(0);
   const batchPollRef = useRef(0);
+
+  const toggleCourseExpand = async (bvid: string) => {
+    const newExpanded = new Set(expandedCourses);
+    if (newExpanded.has(bvid)) {
+      newExpanded.delete(bvid);
+      setExpandedCourses(newExpanded);
+      return;
+    }
+    newExpanded.add(bvid);
+    setExpandedCourses(newExpanded);
+    // 懒加载分集列表
+    if (!coursePages[bvid]) {
+      setLoadingPages((prev) => new Set(prev).add(bvid));
+      try {
+        const resp = await compileApi.getVideoPages(bvid);
+        setCoursePages((prev) => ({ ...prev, [bvid]: resp.pages }));
+      } catch {
+        // ignore
+      } finally {
+        setLoadingPages((prev) => {
+          const next = new Set(prev);
+          next.delete(bvid);
+          return next;
+        });
+      }
+    }
+  };
 
   useEffect(() => {
     setVideos([]);
@@ -105,6 +141,11 @@ export default function WorkspacePage() {
                     title: v.title,
                     duration: v.duration,
                     owner: v.owner,
+                    content_category: (v as any).content_category,
+                    series_name: (v as any).series_name,
+                    series_key: (v as any).series_key,
+                    series_position: (v as any).series_position,
+                    pages_count: (v as any).pages_count,
                   });
                 }
               }
@@ -163,14 +204,15 @@ export default function WorkspacePage() {
     void fetchResult(bvid, sessionId);
   };
 
-  // Compile video
-  const handleCompile = async (bvid: string) => {
+  // Compile video (supports per-page cid)
+  const handleCompile = async (bvid: string, cid?: number, pageTitle?: string) => {
     if (!sessionId) return;
 
-    setCompiling(bvid);
+    const compileKey = cid ? `${bvid}_p${cid}` : bvid;
+    setCompiling(compileKey);
     setCompileProgress(0);
     try {
-      const { task_id } = await compileApi.compileVideo(bvid, sessionId);
+      const { task_id } = await compileApi.compileVideo(bvid, sessionId, cid, pageTitle);
       const pollId = ++compilePollIdRef.current;
       const activeSessionId = sessionId;
 
@@ -395,49 +437,148 @@ export default function WorkspacePage() {
                   )}
                 </div>
               ) : (
-                videos.map((v) => (
-                  <div key={v.bvid}>
-                    <div
-                      className={`video-sidebar-item ${selectedBvid === v.bvid ? "selected" : ""}`}
-                      onClick={() => handleSelectVideo(v.bvid)}
-                    >
-                      <div className="video-sidebar-title">{v.title}</div>
-                      <div className="video-sidebar-meta">
-                        {v.owner && <span>{v.owner}</span>}
-                        {v.duration && (
-                          <span style={{ marginLeft: 6 }}>{formatDuration(v.duration)}</span>
-                        )}
+                videos.map((v) => {
+                  const isCourse = v.content_category === "course";
+                  const isExpanded = expandedCourses.has(v.bvid);
+                  const isLoadingPages = loadingPages.has(v.bvid);
+                  const pages = coursePages[v.bvid] || [];
+
+                  return (
+                    <div key={v.bvid}>
+                      {/* 课程标题 — 可展开 */}
+                      <div
+                        className={`video-sidebar-item ${selectedBvid === v.bvid && !isCourse ? "selected" : ""} ${isCourse ? "course-header" : ""}`}
+                        onClick={() => {
+                          if (isCourse) {
+                            toggleCourseExpand(v.bvid);
+                          } else {
+                            handleSelectVideo(v.bvid);
+                          }
+                        }}
+                      >
+                        <div className="video-sidebar-title">
+                          {isCourse && (
+                            <span className="course-expand-arrow">
+                              {isExpanded ? "▼" : "▶"}
+                            </span>
+                          )}
+                          <span className={`video-badge ${isCourse ? "video-badge-course" : ""}`}>
+                            {isCourse ? "📚 课程" : ""}
+                          </span>
+                          {isCourse && (
+                            <span className="course-page-count">
+                              {v.pages_count ? `${v.pages_count}集` : "多集"}
+                            </span>
+                          )}
+                          {v.title}
+                        </div>
+                        <div className="video-sidebar-meta">
+                          {v.owner && <span>{v.owner}</span>}
+                          {v.duration && (
+                            <span style={{ marginLeft: 6 }}>{formatDuration(v.duration)}</span>
+                          )}
+                          {isCourse && (
+                            <span style={{ marginLeft: 6, fontSize: 11, color: "var(--text-tertiary)" }}>
+                              ▶ 点击展开单集编译
+                            </span>
+                          )}
+                        </div>
                       </div>
+
+                      {/* 课程展开的分集列表 */}
+                      {isCourse && isExpanded && (
+                        <div className="course-pages-container">
+                          {isLoadingPages ? (
+                            <div className="course-pages-loading" style={{ padding: "8px 16px", fontSize: 12, color: "var(--text-tertiary)" }}>
+                              加载分集列表...
+                            </div>
+                          ) : pages.length > 0 ? (
+                            pages.map((page) => {
+                              const pageKey = `${v.bvid}_p${page.cid}`;
+                              const isCompiling = compiling === pageKey;
+                              return (
+                                <div key={pageKey} className="course-page-item">
+                                  <div
+                                    className={`video-sidebar-item video-sidebar-child ${selectedBvid === v.bvid ? "selected" : ""}`}
+                                    onClick={() => handleSelectVideo(v.bvid)}
+                                  >
+                                    <div className="video-sidebar-title">
+                                      <span className="video-episode-badge">
+                                        第{page.page}集
+                                      </span>
+                                      {page.part}
+                                    </div>
+                                    <div className="video-sidebar-meta">
+                                      {page.duration > 0 && (
+                                        <span>{formatDuration(page.duration)}</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div style={{ padding: "4px 12px 4px 24px" }}>
+                                    <button
+                                      className="compile-btn"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleCompile(v.bvid, page.cid, page.part);
+                                      }}
+                                      disabled={isCompiling}
+                                      style={{ fontSize: 11, padding: "3px 8px" }}
+                                    >
+                                      {isCompiling
+                                        ? `编译中... ${Math.round(compileProgress * 100)}%`
+                                        : `编译第${page.page}集`}
+                                    </button>
+                                    {isCompiling && (
+                                      <div className="progress" style={{ marginTop: 4 }}>
+                                        <div
+                                          className="progress-bar"
+                                          style={{ width: `${compileProgress * 100}%` }}
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <div className="course-pages-empty" style={{ padding: "8px 16px", fontSize: 12, color: "var(--text-tertiary)" }}>
+                              无法获取分集列表
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* 普通视频的编译按钮 */}
+                      {!isCourse && (() => {
+                        const hasData = compileResult && (
+                          (compileResult.stats?.concept_count ?? 0) > 0 ||
+                          (compileResult.timeline?.length ?? 0) > 0
+                        );
+                        return selectedBvid === v.bvid && !hasData && !loadingResult;
+                      })() && (
+                        <div style={{ padding: "4px 12px 8px" }}>
+                          <button
+                            className="compile-btn"
+                            onClick={() => handleCompile(v.bvid)}
+                            disabled={compiling === v.bvid}
+                          >
+                            {compiling === v.bvid
+                              ? `编译中... ${Math.round(compileProgress * 100)}%`
+                              : "编译此视频"}
+                          </button>
+                          {compiling === v.bvid && (
+                            <div className="progress" style={{ marginTop: 6 }}>
+                              <div
+                                className="progress-bar"
+                                style={{ width: `${compileProgress * 100}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    {(() => {
-                      const hasData = compileResult && (
-                        (compileResult.stats?.concept_count ?? 0) > 0 ||
-                        (compileResult.timeline?.length ?? 0) > 0
-                      );
-                      return selectedBvid === v.bvid && !hasData && !loadingResult;
-                    })() && (
-                      <div style={{ padding: "4px 12px 8px" }}>
-                        <button
-                          className="compile-btn"
-                          onClick={() => handleCompile(v.bvid)}
-                          disabled={compiling === v.bvid}
-                        >
-                          {compiling === v.bvid
-                            ? `编译中... ${Math.round(compileProgress * 100)}%`
-                            : "编译此视频"}
-                        </button>
-                        {compiling === v.bvid && (
-                          <div className="progress" style={{ marginTop: 6 }}>
-                            <div
-                              className="progress-bar"
-                              style={{ width: `${compileProgress * 100}%` }}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 

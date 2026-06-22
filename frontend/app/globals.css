@@ -3776,6 +3776,24 @@ a { color: inherit; text-decoration: none; }
 .video-sidebar-title { font-size: 13px; font-weight: 500; color: var(--ink); line-height: 1.4; }
 .video-sidebar-meta { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
 
+/* 视频分类徽章 */
+.video-badge { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 10px; margin-right: 4px; vertical-align: middle; font-weight: 600; letter-spacing: 0.02em; }
+.video-badge-series { background: #f9731618; color: #f97316; border: 1px solid #f9731633; }
+.video-badge-course { background: #6366f118; color: #6366f1; border: 1px solid #6366f133; }
+.dark .video-badge-series { background: #f9731622; }
+.dark .video-badge-course { background: #6366f122; }
+
+/* 课程展开 */
+.course-header { cursor: pointer; }
+.course-header:hover { background: var(--bg-sunken); }
+.course-expand-arrow { font-size: 10px; margin-right: 4px; color: var(--text-tertiary); display: inline-block; transition: transform 0.15s; width: 12px; text-align: center; }
+.course-page-count { font-size: 10px; color: var(--text-tertiary); margin-left: 4px; background: var(--bg-sunken); padding: 1px 6px; border-radius: 8px; }
+.course-pages-container { border-left: 2px solid var(--primary-muted); margin: 0 0 4px 12px; }
+.course-page-item { margin-bottom: 0; }
+.video-sidebar-child { padding-left: 20px !important; font-size: 12px; }
+.video-sidebar-child .video-sidebar-title { font-size: 12px; font-weight: 400; }
+.video-episode-badge { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: var(--bg-sunken); color: var(--text-secondary); margin-right: 4px; font-weight: 500; }
+
 /* Timeline */
 .timeline-container { position: relative; margin-bottom: 24px; }
 .timeline-bar { position: relative; height: 40px; background: var(--bg-sunken); border-radius: 6px; overflow: hidden; }

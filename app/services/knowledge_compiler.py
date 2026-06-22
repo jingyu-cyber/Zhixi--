@@ -527,6 +527,8 @@ async def compile_video(
     session_id: str,
     content_fetcher,
     owner_mid: Optional[int] = None,
+    page_cid: Optional[int] = None,
+    page_title: Optional[str] = None,
 ) -> dict:
     """
     编译视频内容为 Concept-Claim-Evidence 知识结构
@@ -537,6 +539,8 @@ async def compile_video(
         session_id: 用户会话 ID (已废弃，用于向后兼容)
         content_fetcher: ContentFetcher 实例
         owner_mid: B站用户ID (数据所有权标识)
+        page_cid: 可选，指定分P的 cid 进行分集编译
+        page_title: 可选，分集标题
 
     Returns:
         {
@@ -547,7 +551,9 @@ async def compile_video(
             "segment_count": int,
         }
     """
-    logger.info(f"[{bvid}] 开始知识编译...")
+    is_page = bool(page_cid)
+    log_id = f"{bvid}_p{page_cid}" if is_page else bvid
+    logger.info(f"[{log_id}] 开始知识编译...")
 
     # 获取或创建视频信息
     result = await db.execute(
@@ -588,13 +594,13 @@ async def compile_video(
         await db.flush()
         logger.info(f"[{bvid}] 更新 VideoCache owner_mid: {video_cache.owner_mid}")
 
-    video_title = video_cache.title if video_cache else "未知标题"
+    video_title = page_title or (video_cache.title if video_cache else "未知标题")
     video_duration = video_cache.duration if video_cache else None
 
-    # Step 1: 获取片段
-    segments_data = await content_fetcher.fetch_segments(bvid)
+    # Step 1: 获取片段（分集编译时使用指定的 cid）
+    segments_data = await content_fetcher.fetch_segments(bvid, cid=page_cid, title=page_title or video_title)
     if not segments_data:
-        logger.warning(f"[{bvid}] 无法获取视频片段")
+        logger.warning(f"[{log_id}] 无法获取视频片段")
         return {
             "bvid": bvid,
             "concept_count": 0,
@@ -1060,7 +1066,7 @@ async def compile_video(
     await db.commit()
 
     logger.info(
-        f"[{bvid}] 知识编译完成: "
+        f"[{log_id}] 知识编译完成: "
         f"{len(concept_map)} 概念, {total_claims} 论断, "
         f"{peak_count} 峰值片段, "
         f"同步 {synced_memory_count} MemoryNode, {synced_memory_edge_count} MemoryEdge"

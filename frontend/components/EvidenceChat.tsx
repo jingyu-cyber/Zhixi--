@@ -12,7 +12,7 @@ interface ChatMessage {
   evidence: EvidenceItem[];
 }
 
-export default function EvidenceChat() {
+export default function EvidenceChat({ bvid }: { bvid?: string | null }) {
   const { sessionId, scopeKey } = useAuthSession();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -50,7 +50,7 @@ export default function EvidenceChat() {
       const response = await fetch(`${API_BASE_URL}/evidence/ask/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q, session_id: activeSessionId }),
+        body: JSON.stringify({ question: q, session_id: activeSessionId, bvid: bvid || undefined }),
       });
 
       if (!response.ok || !response.body) {

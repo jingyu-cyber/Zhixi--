@@ -519,10 +519,9 @@ async def _prepare_messages(request: ChatRequest, db: AsyncSession) -> tuple[lis
     # 2) LLM 路由优先（对非 graph/path 类型做二次确认）
     if route_type in ("vector", "db_list", "db_content"):
         llm_route, route_raw = _route_with_llm(question)
-        route_source = "LLM"
         if llm_route:
             route_type = llm_route
-            logger.info(f"LLM 路由覆盖: {route_source} => {route_type}")
+            logger.info(f"LLM 路由覆盖: LLM => {route_type}")
 
     related: Optional[bool] = None
 

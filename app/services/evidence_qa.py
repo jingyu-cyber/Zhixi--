@@ -179,6 +179,7 @@ async def _get_claims_for_concepts(
     db: AsyncSession,
     concept_ids: List[int],
     session_id: Optional[str] = None,
+    bvid: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """获取概念关联的所有 Claim，附带视频标题。"""
     if not concept_ids:
@@ -194,7 +195,10 @@ async def _get_claims_for_concepts(
         .outerjoin(VideoCache, VideoCache.bvid == Claim.video_bvid)
         .where(Claim.concept_id.in_(concept_ids))
     )
-    if session_id:
+    # bvid is a more specific filter; when present, skip session_id to find all claims for the video
+    if bvid:
+        stmt = stmt.where(Claim.video_bvid == bvid)
+    elif session_id:
         stmt = stmt.where(Claim.session_id == session_id)
     stmt = stmt.order_by(Claim.confidence.desc()).limit(30)
 
@@ -240,6 +244,7 @@ async def _retrieve_evidence(
     db: AsyncSession,
     question: str,
     session_id: Optional[str] = None,
+    bvid: Optional[str] = None,
 ) -> tuple[str, List[Dict[str, Any]], int]:
     """检索证据：概念匹配 + Claim + RAG 向量补充。
 
@@ -253,18 +258,37 @@ async def _retrieve_evidence(
     # Step 2: 模糊匹配 Concept
     concepts = await _match_concepts(db, keywords, session_id)
     concept_ids = [c.id for c in concepts]
+
+    # If bvid provided, also match concepts linked to this video
+    if bvid:
+        from sqlalchemy import distinct as _distinct
+        bvid_concept_ids_query = select(_distinct(Claim.concept_id)).where(Claim.video_bvid == bvid)
+        bvid_cids_result = await db.execute(bvid_concept_ids_query)
+        bvid_cids = [row[0] for row in bvid_cids_result.all() if row[0]]
+        if bvid_cids:
+            bvid_concepts_result = await db.execute(
+                select(Concept).where(Concept.id.in_(bvid_cids))
+            )
+            bvid_concepts = bvid_concepts_result.scalars().all()
+            existing_ids = set(concept_ids)
+            for c in bvid_concepts:
+                if c.id not in existing_ids:
+                    concepts.append(c)
+                    concept_ids.append(c.id)
+                    existing_ids.add(c.id)
+
     concept_count = len(concepts)
     logger.info(f"[EvidenceQA] 匹配概念: {[c.name for c in concepts]}")
 
-    # Step 3: 获取关联 Claim（带时间信息）
-    claims = await _get_claims_for_concepts(db, concept_ids, session_id)
+    # Step 3: 获取关联 Claim（带时间信息，可按 bvid 过滤）
+    claims = await _get_claims_for_concepts(db, concept_ids, session_id, bvid=bvid)
     logger.info(f"[EvidenceQA] 获取 Claims: {len(claims)} 条")
 
-    # Step 4: RAG 向量检索补充
+    # Step 4: RAG 向量检索补充（可按 bvid 过滤）
     rag_docs = []
     try:
         rag = RAGService()
-        rag_docs = rag.search(question, k=3, session_id=session_id)
+        rag_docs = rag.search(question, k=3, session_id=session_id, bvids=[bvid] if bvid else None)
         logger.info(f"[EvidenceQA] RAG 召回: {len(rag_docs)} 条")
     except Exception as e:
         logger.warning(f"[EvidenceQA] RAG 检索失败: {e}")
@@ -279,6 +303,7 @@ async def ask_with_evidence(
     db: AsyncSession,
     question: str,
     session_id: Optional[str] = None,
+    bvid: Optional[str] = None,
 ) -> Dict[str, Any]:
     """证据级问答 — 非流式版本。
 
@@ -287,7 +312,7 @@ async def ask_with_evidence(
     """
     # 检索证据
     evidence_context, evidence_items, concept_count = await _retrieve_evidence(
-        db, question, session_id
+        db, question, session_id, bvid=bvid
     )
 
     # 构建 LLM 消息
@@ -320,6 +345,7 @@ async def ask_with_evidence_stream(
     db: AsyncSession,
     question: str,
     session_id: Optional[str] = None,
+    bvid: Optional[str] = None,
 ):
     """证据级问答 — SSE 流式版本。
 
@@ -328,7 +354,7 @@ async def ask_with_evidence_stream(
     """
     # 检索证据（在流式开始前完成）
     evidence_context, evidence_items, concept_count = await _retrieve_evidence(
-        db, question, session_id
+        db, question, session_id, bvid=bvid
     )
 
     # 构建 LLM 消息

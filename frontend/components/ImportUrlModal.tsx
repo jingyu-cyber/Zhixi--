@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { knowledgeApi, ImportUrlResponse } from "@/lib/api";
+import { readAuthSession } from "@/lib/session";
 
 interface ImportUrlModalProps {
   open: boolean;
@@ -44,9 +45,7 @@ export default function ImportUrlModal({ open, onClose, onSuccess }: ImportUrlMo
     setResult(null);
 
     try {
-      const sessionId = typeof window !== "undefined"
-        ? localStorage.getItem("bili_session") || undefined
-        : undefined;
+      const { sessionId } = readAuthSession();
       const res = await knowledgeApi.importUrl(trimmed, sessionId);
       setResult(res);
       onSuccess?.(res);

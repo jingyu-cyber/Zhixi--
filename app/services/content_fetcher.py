@@ -541,9 +541,16 @@ class ContentFetcher:
                 logger.debug(f"[{bvid}] 清理过小音频失败: {file_path}")
             return None
 
-        text = await self.asr.transcribe_local_file(file_path)
-        if text:
-            preview = text[:120].replace("\n", " ").strip()
-            logger.info(f"[{bvid}] Recognition ASR 成功，长度={len(text)}，预览：{preview}")
-        return text
+        try:
+            text = await self.asr.transcribe_local_file(file_path)
+            if text:
+                preview = text[:120].replace("\n", " ").strip()
+                logger.info(f"[{bvid}] Recognition ASR 成功，长度={len(text)}，预览：{preview}")
+            return text
+        finally:
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            except Exception:
+                logger.debug(f"[{bvid}] 清理临时音频文件失败: {file_path}")
 

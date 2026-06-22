@@ -126,12 +126,6 @@ async def generate_learning_path(
         if not results:
             # fallback 到 DB
             pattern = f"%{target}%"
-            db_result = await db.execute(
-                select(KnowledgeNode)
-                .where(KnowledgeNode.name.ilike(pattern))
-                .order_by(KnowledgeNode.source_count.desc())
-                .limit(1)
-            )
             if session_id:
                 db_result = await db.execute(
                     select(KnowledgeNode)
@@ -139,6 +133,13 @@ async def generate_learning_path(
                         KnowledgeNode.session_id == session_id,
                         KnowledgeNode.name.ilike(pattern),
                     )
+                    .order_by(KnowledgeNode.source_count.desc())
+                    .limit(1)
+                )
+            else:
+                db_result = await db.execute(
+                    select(KnowledgeNode)
+                    .where(KnowledgeNode.name.ilike(pattern))
                     .order_by(KnowledgeNode.source_count.desc())
                     .limit(1)
                 )

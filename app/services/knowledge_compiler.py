@@ -611,58 +611,40 @@ async def compile_video(
 
     logger.info(f"[{bvid}] 获取到 {len(segments_data)} 个片段")
 
-    # 清除旧的编译数据（如果存在）
-    existing_concepts = await db.execute(
-        select(Concept).where(
-            Concept.owner_mid == owner_mid,
-        )
-    )
-    existing_concept_list = existing_concepts.scalars().all()
-    # 检查是否有与此视频关联的 claim
-    video_claim_concept_ids = set()
-    for concept in existing_concept_list:
-        claim_result = await db.execute(
-            select(Claim.id).where(
-                Claim.concept_id == concept.id,
-                Claim.video_bvid == bvid,
-            )
-        )
-        if claim_result.scalars().first() is not None:
-            video_claim_concept_ids.add(concept.id)
-
-    # 删除此视频的旧 claims
-    if video_claim_concept_ids:
-        from sqlalchemy import delete
-        await db.execute(
-            delete(Claim).where(
-                Claim.video_bvid == bvid,
-                Claim.owner_mid == owner_mid,
-            )
-        )
-        # 删除没有其他 claim 的空概念
-        for cid in video_claim_concept_ids:
-            remaining = await db.scalar(
-                select(func.count()).select_from(Claim).where(Claim.concept_id == cid)
-            )
-            if remaining == 0:
-                await db.execute(
-                    delete(Concept).where(Concept.id == cid)
-                )
-        # 删除旧的 ConceptRelation
-        await db.execute(
-            delete(ConceptRelation).where(
-                ConceptRelation.owner_mid == owner_mid,
-            )
-        )
-
-    # 删除旧 Segment 记录
+    # 清除此视频的旧编译数据
     from sqlalchemy import delete as sql_delete
-    await db.execute(
-        sql_delete(Segment).where(
-            Segment.video_bvid == bvid,
-            Segment.owner_mid == owner_mid,
-        )
+    # 1. 找到此视频所有旧 claims 关联的 concept_id
+    old_claims_result = await db.execute(
+        select(Claim.concept_id).where(Claim.video_bvid == bvid)
     )
+    old_concept_ids = set(row[0] for row in old_claims_result.fetchall() if row[0])
+
+    # 2. 删除此视频的所有旧 claims
+    await db.execute(
+        sql_delete(Claim).where(Claim.video_bvid == bvid)
+    )
+
+    # 3. 删除此视频的旧 segments
+    await db.execute(
+        sql_delete(Segment).where(Segment.video_bvid == bvid)
+    )
+
+    # 4. 删除没有其他 claim 的孤儿概念
+    for cid in old_concept_ids:
+        remaining = await db.scalar(
+            select(func.count()).select_from(Claim).where(Claim.concept_id == cid)
+        )
+        if remaining == 0:
+            await db.execute(
+                sql_delete(Concept).where(Concept.id == cid)
+            )
+
+    # 5. 删除旧的 ConceptRelation
+    if owner_mid is not None:
+        await db.execute(
+            sql_delete(ConceptRelation).where(ConceptRelation.owner_mid == owner_mid)
+        )
+
     await db.flush()
 
     # 写入新 Segment 记录

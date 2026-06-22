@@ -8,12 +8,13 @@ interface KnowledgeMapProps {
 }
 
 export default function KnowledgeMap({ compileResult }: KnowledgeMapProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!svgRef.current || !compileResult) return;
+    if (!svgRef.current || !containerRef.current || !compileResult) return;
 
     let cancelled = false;
 
@@ -22,17 +23,17 @@ export default function KnowledgeMap({ compileResult }: KnowledgeMapProps) {
         const { Transformer } = await import("markmap-lib");
         const { Markmap } = await import("markmap-view");
 
-        if (cancelled || !svgRef.current) return;
+        if (cancelled || !svgRef.current || !containerRef.current) return;
 
-        // Wait for container to have valid dimensions (max 15 retries ~3s)
-        const rect = svgRef.current.getBoundingClientRect();
-        if (rect.width === 0 || rect.height === 0) {
+        // Use container (visible div) for dimension check, not the display:none SVG
+        const containerRect = containerRef.current.getBoundingClientRect();
+        const h = containerRect.height || (containerRef.current.clientHeight);
+        if (h < 50) {
           const retries = (window as any).__markmapRetries || 0;
           if (retries < 15) {
             (window as any).__markmapRetries = retries + 1;
             setTimeout(() => { if (!cancelled) renderMap(); }, 200);
           } else {
-            console.warn('Markmap container has zero dimensions after retries');
             setError('思维导图容器尺寸异常，请刷新页面');
           }
           return;
@@ -97,7 +98,7 @@ export default function KnowledgeMap({ compileResult }: KnowledgeMapProps) {
   }
 
   return (
-    <div className="markmap-container">
+    <div className="markmap-container" ref={containerRef}>
       {!loaded && (
         <div style={{
           display: "flex",

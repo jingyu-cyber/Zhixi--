@@ -24,13 +24,20 @@ export default function KnowledgeMap({ compileResult }: KnowledgeMapProps) {
 
         if (cancelled || !svgRef.current) return;
 
-        // Wait for container to have valid dimensions
+        // Wait for container to have valid dimensions (max 15 retries ~3s)
         const rect = svgRef.current.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) {
-          // Retry after a short delay
-          setTimeout(() => { if (!cancelled) renderMap(); }, 200);
+          const retries = (window as any).__markmapRetries || 0;
+          if (retries < 15) {
+            (window as any).__markmapRetries = retries + 1;
+            setTimeout(() => { if (!cancelled) renderMap(); }, 200);
+          } else {
+            console.warn('Markmap container has zero dimensions after retries');
+            setError('思维导图容器尺寸异常，请刷新页面');
+          }
           return;
         }
+        (window as any).__markmapRetries = 0;
 
         // Build markdown from compile result
         const lines: string[] = [];

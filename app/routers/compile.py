@@ -303,10 +303,13 @@ async def _compile_video_task(
             await bili.close()
 
     except Exception as e:
+        error_msg = str(e)
+        if "database is locked" in error_msg:
+            error_msg = "数据库繁忙，请稍后重试（并发编译过多）"
         logger.error(f"编译任务失败 [{bvid}]: {e}")
         compile_tasks[task_id]["status"] = "failed"
         compile_tasks[task_id]["progress"] = 0.0
-        compile_tasks[task_id]["message"] = f"编译失败: {e}"
+        compile_tasks[task_id]["message"] = f"编译失败: {error_msg}"
 
 
 # ==================== GET /compile/status/{task_id} ====================

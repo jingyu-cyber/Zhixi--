@@ -23,10 +23,10 @@ router = APIRouter(prefix="/tree", tags=["知识树"])
 
 async def _load_graph_store(db: AsyncSession, session_id: Optional[str] = None) -> GraphStore:
     """为当前请求加载隔离后的图谱快照（按 owner_mid 过滤，演示/未登录用户查看全部）"""
-    owner_mid = await _resolve_owner_mid(db, session_id)
+    owner_mid = None  # SHARED
     gs = GraphStore(graph_path=settings.graph_persist_path)
     # 有 owner_mid 的真实用户按 owner 隔离；演示/未登录用户 (owner_mid=None) 不受限查看全部数据
-    await gs.load_from_db(db, session_id=session_id, owner_mid=owner_mid)
+    await gs.load_from_db(db, session_id=None, owner_mid=None)
     return gs
 
 
@@ -202,7 +202,7 @@ async def get_topics(
 ):
     """获取一级主题列表（去重）"""
     try:
-        owner_mid = await _resolve_owner_mid(db, session_id)
+        owner_mid = None  # SHARED
         # 使用子查询去重：取每个 normalized_name 中 source_count 最高的节点
         from sqlalchemy import and_
         subq = (
@@ -247,7 +247,7 @@ async def get_node_detail(
     db: AsyncSession = Depends(get_db),
 ):
     """获取知识节点详情"""
-    owner_mid = await _resolve_owner_mid(db, session_id)
+    owner_mid = None  # SHARED
     node_query = select(KnowledgeNode).where(KnowledgeNode.id == node_id)
     if owner_mid is not None:
         node_query = node_query.where(KnowledgeNode.owner_mid == owner_mid)
@@ -345,7 +345,7 @@ async def get_node_detail(
             "id": seg.id,
             "start_time": seg.start_time,
             "end_time": seg.end_time,
-            "text": (seg.cleaned_text or seg.raw_text or "")[:240],
+            "text": (seg.cleaned_text or seg.raw_text)[:240],
             "time_label": f"{_fmt_time(seg.start_time)}-{_fmt_time(seg.end_time)}" if seg.start_time is not None else "",
             "match_confidence": round(score, 3),
             "confidence_level": confidence_level_from_score(score),
@@ -408,7 +408,7 @@ async def get_video_detail(
     db: AsyncSession = Depends(get_db),
 ):
     """获取视频详情（知识点 + 时间片段 + 树中位置）"""
-    owner_mid = await _resolve_owner_mid(db, session_id)
+    owner_mid = None  # SHARED
     result = await db.execute(select(VideoCache).where(VideoCache.bvid == bvid))
     video = result.scalar_one_or_none()
     if not video:
@@ -487,7 +487,7 @@ async def get_video_detail(
                 "segment_index": seg.segment_index,
                 "start_time": seg.start_time,
                 "end_time": seg.end_time,
-                "text": (seg.cleaned_text or seg.raw_text or "")[:300],
+                "text": (seg.cleaned_text or seg.raw_text)[:300],
                 "summary": seg.summary,
                 "source_type": seg.source_type,
                 "time_label": f"{_fmt_time(seg.start_time)}-{_fmt_time(seg.end_time)}" if seg.start_time is not None else "",
@@ -504,7 +504,7 @@ async def get_node_segments(
     db: AsyncSession = Depends(get_db),
 ):
     """获取节点关联的所有片段"""
-    owner_mid = await _resolve_owner_mid(db, session_id)
+    owner_mid = None  # SHARED
     links_query = select(NodeSegmentLink).where(NodeSegmentLink.node_id == node_id)
     if owner_mid is not None:
         links_query = links_query.where(NodeSegmentLink.owner_mid == owner_mid)
@@ -546,7 +546,7 @@ async def get_learning_path(
     db: AsyncSession = Depends(get_db),
 ):
     """生成学习路径推荐"""
-    owner_mid = await _resolve_owner_mid(db, session_id)
+    owner_mid = None  # SHARED
     gs = await _load_graph_store(db, session_id=session_id)
 
     if not gs.has_node(node_id):
@@ -647,7 +647,7 @@ async def get_tree_stats(
     db: AsyncSession = Depends(get_db),
 ):
     """获取知识树统计"""
-    owner_mid = await _resolve_owner_mid(db, session_id)
+    owner_mid = None  # SHARED
     if owner_mid is not None:
         node_count = await db.scalar(select(func.count()).select_from(KnowledgeNode).where(KnowledgeNode.owner_mid == owner_mid))
         edge_count = await db.scalar(select(func.count()).select_from(KnowledgeEdge).where(KnowledgeEdge.owner_mid == owner_mid))
@@ -689,71 +689,63 @@ async def get_tree_stats(
     }
 
 
-@router.get("/memory-summary")
-async def get_memory_summary(
-    session_id: Optional[str] = Query(None, description="会话ID，用于数据隔离"),
-    min_confidence: Optional[float] = Query(None, description="最低置信度阈值"),
+@router.get("/memory-layer")
+async def get_tree_by_memory_layer(
+    layer: str = Query(..., description="记忆层级: working / short_term / long_term"),
+    min_confidence: Optional[float] = Query(None, description="最低置信度"),
+    session_id: Optional[str] = Query(None, description="会话ID"),
     db: AsyncSession = Depends(get_db),
 ):
-    """获取知识树统计 + 记忆系统摘要"""
-    owner_mid = await _resolve_owner_mid(db, session_id)
-
-    # Tree stats
-    conf_threshold = min_confidence or settings.tree_min_confidence
-    if owner_mid is not None:
-        node_count = await db.scalar(select(func.count()).select_from(KnowledgeNode).where(KnowledgeNode.owner_mid == owner_mid))
-        edge_count = await db.scalar(select(func.count()).select_from(KnowledgeEdge).where(KnowledgeEdge.owner_mid == owner_mid))
-        topic_count = await db.scalar(
-            select(func.count()).select_from(KnowledgeNode)
-            .where(KnowledgeNode.node_type == "topic", KnowledgeNode.owner_mid == owner_mid)
-        )
-        low_confidence_count = await db.scalar(
-            select(func.count()).select_from(KnowledgeNode)
-            .where(KnowledgeNode.confidence < conf_threshold, KnowledgeNode.owner_mid == owner_mid)
-        )
-    else:
-        node_count = await db.scalar(select(func.count()).select_from(KnowledgeNode))
-        edge_count = await db.scalar(select(func.count()).select_from(KnowledgeEdge))
-        topic_count = await db.scalar(
-            select(func.count()).select_from(KnowledgeNode)
-            .where(KnowledgeNode.node_type == "topic")
-        )
-        low_confidence_count = await db.scalar(
-            select(func.count()).select_from(KnowledgeNode)
-            .where(KnowledgeNode.confidence < conf_threshold)
-        )
-
-    # Memory summary
-    memory_summary = {
-        "total_nodes": 0, "working": 0, "short_term": 0, "long_term": 0,
-        "avg_strength": 0, "needs_review": 0, "strong": 0,
-    }
+    """按记忆层级过滤知识树"""
     try:
-        from app.services.memory.store import MemoryStore as _MemoryStore
-        memory_store = _MemoryStore()
-        memory_stats = await memory_store.get_memory_stats(db, owner_mid=owner_mid)
-        if memory_stats:
-            memory_summary["total_nodes"] = memory_stats.total_nodes
-            memory_summary["working"] = memory_stats.working_count
-            memory_summary["short_term"] = memory_stats.short_term_count
-            memory_summary["long_term"] = memory_stats.long_term_count
-            memory_summary["avg_strength"] = round(
-                (memory_stats.avg_strength_working + memory_stats.avg_strength_short_term + memory_stats.avg_strength_long_term) / 3, 3
-            )
-            memory_summary["needs_review"] = memory_stats.needs_review
-            memory_summary["strong"] = memory_stats.strong_count
-    except Exception as e:
-        logger.warning(f"Memory summary fetch failed: {e}")
+        gs = await _load_graph_store(db, session_id=session_id)
+        builder = _make_tree_builder(gs)
+        tree_data = builder.build_tree(min_confidence=min_confidence)
 
-    return {
-        "tree_stats": {
-            "total_topics": topic_count or 0,
-            "total_nodes": node_count or 0,
-            "total_edges": edge_count or 0,
-            "low_confidence_count": low_confidence_count or 0,
-        },
-        "memory_summary": memory_summary,
-    }
+        if layer not in ("working", "short_term", "long_term"):
+            raise HTTPException(status_code=400, detail="layer 必须为 working / short_term / long_term")
+
+        filtered = builder.filter_by_memory_layer(tree_data["tree"], layer)
+        await _fill_video_counts(filtered, db, session_id=session_id)
+
+        topic_count = len(filtered)
+        node_count = sum(f.get("node_count", 0) for f in filtered)
+        return {
+            "tree": filtered,
+            "stats": {
+                **tree_data["stats"],
+                "total_topics": topic_count,
+                "total_nodes": node_count,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取记忆层级知识树失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/memory-summary")
+async def get_tree_memory_summary(
+    min_confidence: Optional[float] = Query(None, description="最低置信度"),
+    session_id: Optional[str] = Query(None, description="会话ID"),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取知识树记忆状态摘要"""
+    try:
+        gs = await _load_graph_store(db, session_id=session_id)
+        builder = _make_tree_builder(gs)
+        tree_data = builder.build_tree(min_confidence=min_confidence)
+
+        memory_summary = builder.get_memory_summary(tree_data["tree"])
+
+        return {
+            "tree_stats": tree_data["stats"],
+            "memory_summary": memory_summary,
+        }
+    except Exception as e:
+        logger.error(f"获取记忆摘要失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/pending")
@@ -763,7 +755,7 @@ async def get_pending_nodes(
     db: AsyncSession = Depends(get_db),
 ):
     """获取待审核节点列表"""
-    owner_mid = await _resolve_owner_mid(db, session_id)
+    owner_mid = None  # SHARED
     query = select(KnowledgeNode).where(KnowledgeNode.review_status == "pending_review")
     if owner_mid is not None:
         query = query.where(KnowledgeNode.owner_mid == owner_mid)
@@ -795,7 +787,7 @@ async def review_node(
     if action not in ("approve", "reject"):
         raise HTTPException(status_code=400, detail="action 必须为 approve 或 reject")
 
-    owner_mid = await _resolve_owner_mid(db, session_id)
+    owner_mid = None  # SHARED
     query = select(KnowledgeNode).where(KnowledgeNode.id == node_id)
     if owner_mid is not None:
         query = query.where(KnowledgeNode.owner_mid == owner_mid)
@@ -814,7 +806,7 @@ async def review_node(
 
 async def _fill_video_counts(tree_nodes: list[dict], db: AsyncSession, session_id: Optional[str] = None) -> None:
     """递归填充树节点的 video_count"""
-    owner_mid = await _resolve_owner_mid(db, session_id)
+    owner_mid = None  # SHARED
     for node in tree_nodes:
         node_id = node.get("id")
         if node_id and node_id > 0:

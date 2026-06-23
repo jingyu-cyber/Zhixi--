@@ -833,6 +833,36 @@ export interface OrganizerReport {
   export_generated_at: string;
 }
 
+// ==================== Agent 类型 ====================
+
+export interface AgentStep {
+  tool: string;
+  input: string;
+  output: string;
+}
+
+export interface AgentCitation {
+  bvid: string;
+  title: string;
+  time: string;
+  text: string;
+}
+
+export interface AgentAnswer {
+  answer: string;
+  steps: AgentStep[];
+  citations: AgentCitation[];
+}
+
+export const agentApi = {
+  ask: (question: string, sessionId?: string | null) =>
+    request<AgentAnswer>("/agent/ask", {
+      method: "POST",
+      body: JSON.stringify({ question, session_id: sessionId }),
+    }),
+};
+
+
 // ==================== 知映编译 API ====================
 
 export const compileApi = {

@@ -1,212 +1,133 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { searchApi, SearchResults } from "@/lib/api";
 import NavSidebar from "@/components/NavSidebar";
 import UserTopbar from "@/components/UserTopbar";
-import { isActiveSession, useAuthSession } from "@/lib/session";
-
-type TabType = "all" | "nodes" | "videos" | "segments";
 
 export default function SearchPage() {
-  const { sessionId, scopeKey } = useAuthSession();
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<TabType>("all");
-  const [results, setResults] = useState<SearchResults | null>(null);
+  const [results, setResults] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const requestIdRef = useRef(0);
+  const [tab, setTab] = useState("all");
 
-  useEffect(() => {
-    setResults(null);
-    setLoading(false);
-  }, [sessionId, scopeKey]);
-
-  const doSearch = async (nextTab?: TabType) => {
-    const searchTab = nextTab || tab;
-    if (!query.trim() || !sessionId) {
-      setResults(null);
-      return;
-    }
-    const requestId = ++requestIdRef.current;
-    const activeSessionId = sessionId;
+  const doSearch = async (q: string) => {
+    if (!q.trim()) return;
     setLoading(true);
     try {
-      const data = await searchApi.search(query, searchTab, 20, sessionId);
-      if (requestIdRef.current === requestId && isActiveSession(activeSessionId)) {
-        setResults(data);
-      }
+      const base = window.location.hostname === "localhost"
+        ? "http://localhost:8000"
+        : "/api/proxy";
+      const resp = await fetch(base + "/search?q=" + encodeURIComponent(q) + "&type=all&limit=20");
+      const data = await resp.json();
+      setResults(data);
     } catch (e) {
-      if (requestIdRef.current === requestId && isActiveSession(activeSessionId)) {
-        console.error("Search failed:", e);
-        setResults(null);
-      }
-    } finally {
-      if (requestIdRef.current === requestId && isActiveSession(activeSessionId)) {
-        setLoading(false);
-      }
+      console.error(e);
     }
+    setLoading(false);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") doSearch();
-  };
-
-  const tabs: { key: TabType; label: string }[] = [
+  const tabs = [
     { key: "all", label: "全部" },
     { key: "nodes", label: "知识节点" },
     { key: "videos", label: "视频" },
-    { key: "segments", label: "片段" },
   ];
 
-  const nodeCount = results?.nodes?.length ?? 0;
-  const videoCount = results?.videos?.length ?? 0;
-  const segmentCount = results?.segments?.length ?? 0;
-  const totalCount = nodeCount + videoCount + segmentCount;
+  const nodeCount = results?.nodes?.length || 0;
+  const videoCount = results?.videos?.length || 0;
+  const totalCount = nodeCount + videoCount;
 
   return (
     <div className="app-shell">
       <header className="app-topbar">
         <div className="brand">
-          <span className="brand-title">知析 ZhiXi</span>
-          <span className="brand-subtitle">搜索</span>
+          <span style={{ fontSize: 18, fontWeight: 700 }}>BiliMind</span>
         </div>
-        <div className="topbar-actions">
-          <UserTopbar />
-        </div>
+        <UserTopbar />
       </header>
       <main className="app-main">
         <div className="app-with-nav">
           <NavSidebar />
-          <div className="app-content">
-            <div className="search-hero">
-              <h2>知识搜索</h2>
-              <p>搜索知识节点、视频和时间片段，快速定位学习内容</p>
-            </div>
+          <div style={{ flex: 1, padding: 24, overflow: "auto" }}>
+            <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>知识搜索</h2>
 
-            {/* 搜索栏 */}
-            <div className="search-bar">
+            <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
               <input
-                id="search-query"
-                name="q"
-                className="search-input"
-                type="text"
-                placeholder="输入关键词搜索知识点、视频或片段..."
-                value={query}
+                type="text" value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={handleKeyDown}
+                onKeyDown={(e) => e.key === "Enter" && doSearch(query)}
+                placeholder="搜索知识点、视频..."
+                style={{ flex: 1, padding: "10px 16px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 15, background: "var(--card-bg)", color: "var(--text-primary)" }}
               />
-              <button className="btn btn-primary" onClick={() => void doSearch()} disabled={loading || !query.trim()}>
+              <button onClick={() => doSearch(query)} disabled={loading}
+                style={{ padding: "10px 24px", borderRadius: 8, border: "none", background: loading ? "#9ca3af" : "#059669", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>
                 {loading ? "搜索中..." : "搜索"}
               </button>
             </div>
 
-            {/* Tab 切换 */}
-            <div className="search-tabs">
-              {tabs.map((t) => (
-                <button
-                  key={t.key}
-                  className={`search-tab ${tab === t.key ? "active" : ""}`}
-                  onClick={() => {
-                    setTab(t.key);
-                    if (results) void doSearch(t.key);
-                  }}
-                >
-                  {t.label}
-                  {results && t.key === "nodes" && nodeCount > 0 && ` (${nodeCount})`}
-                  {results && t.key === "videos" && videoCount > 0 && ` (${videoCount})`}
-                  {results && t.key === "segments" && segmentCount > 0 && ` (${segmentCount})`}
-                  {results && t.key === "all" && totalCount > 0 && ` (${totalCount})`}
-                </button>
-              ))}
-            </div>
+            {results && (
+              <div style={{ display: "flex", gap: 8, marginBottom: 16, borderBottom: "1px solid var(--border)", paddingBottom: 8 }}>
+                {tabs.map((t) => (
+                  <button key={t.key} onClick={() => setTab(t.key)}
+                    style={{ padding: "6px 16px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 13, fontWeight: tab === t.key ? 600 : 400, background: tab === t.key ? "var(--accent,#059669)" : "transparent", color: tab === t.key ? "#fff" : "var(--text-secondary)" }}>
+                    {t.label}{t.key === "all" && totalCount > 0 ? " (" + totalCount + ")" : ""}{t.key === "nodes" && nodeCount > 0 ? " (" + nodeCount + ")" : ""}{t.key === "videos" && videoCount > 0 ? " (" + videoCount + ")" : ""}
+                  </button>
+                ))}
+              </div>
+            )}
 
-            {/* 搜索结果 */}
-            <div className="search-results">
-              {loading && <div className="loading-state">搜索中...</div>}
-
-              {results && !loading && (
-                <>
-                  {/* 知识节点 */}
-                  {(tab === "all" || tab === "nodes") && results.nodes.length > 0 && (
-                    <div style={{ marginBottom: 24 }}>
-                      {tab === "all" && <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>知识节点 ({results.nodes.length})</h3>}
-                      {results.nodes.map((n) => (
-                        <div key={n.id} className="search-result-card">
-                          <div className="search-result-name">
-                            <span className={`node-badge ${n.node_type}`} style={{ marginRight: 8 }}>{n.node_type}</span>
-                            <Link href={`/node/${n.id}`}>{n.name}</Link>
-                          </div>
-                          <div className="search-result-meta">
-                            <span>难度 {"●".repeat(n.difficulty)}</span>
-                            <span>置信度 {Math.round(n.confidence * 100)}%</span>
-                            <span>{n.video_count} 视频</span>
-                            <span>{n.source_count} 来源</span>
-                          </div>
-                          {n.definition && <div className="search-result-desc">{n.definition}</div>}
-                          <div className="search-result-actions">
-                            <Link href={`/node/${n.id}`} className="btn btn-sm btn-ghost">查看详情</Link>
-                            <Link href={`/learning-path?target=${encodeURIComponent(n.name)}`} className="btn btn-sm btn-outline">生成路径</Link>
-                          </div>
+            {results && !loading && (
+              <div>
+                {(tab === "all" || tab === "nodes") && results.nodes.length > 0 && (
+                  <div style={{ marginBottom: 24 }}>
+                    {tab === "all" && <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>知识节点 ({results.nodes.length})</h3>}
+                    {results.nodes.map((n: any) => (
+                      <div key={n.id} style={{ padding: "12px 16px", marginBottom: 8, borderRadius: 8, background: "var(--card-bg)", border: "1px solid var(--border)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                          <span style={{ padding: "2px 8px", borderRadius: 4, fontSize: 11, background: "#e0f2fe", color: "#0369a1" }}>{n.node_type}</span>
+                          <Link href={"/node/" + n.id} style={{ fontWeight: 600, fontSize: 15, color: "var(--text-primary)", textDecoration: "none" }}>{n.name}</Link>
                         </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* 视频 */}
-                  {(tab === "all" || tab === "videos") && results.videos.length > 0 && (
-                    <div style={{ marginBottom: 24 }}>
-                      {tab === "all" && <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>视频 ({results.videos.length})</h3>}
-                      {results.videos.map((v) => (
-                        <div key={v.bvid} className="search-result-card">
-                          <div className="search-result-name">
-                            <Link href={`/video/${v.bvid}`}>{v.title}</Link>
-                          </div>
-                          <div className="search-result-meta">
-                            {v.owner_name && <span>UP: {v.owner_name}</span>}
-                            {v.knowledge_node_count > 0 && <span>{v.knowledge_node_count} 个知识点</span>}
-                          </div>
-                          {v.description && <div className="search-result-desc">{v.description.slice(0, 120)}</div>}
+                        {n.definition && <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0" }}>{n.definition.slice(0, 120)}</p>}
+                        <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+                          <Link href="/tree" style={{ fontSize: 12, color: "#059669", textDecoration: "none" }}>知识树</Link>
+                          <Link href={"/learning-path?target=" + encodeURIComponent(n.name)} style={{ fontSize: 12, color: "#059669", textDecoration: "none" }}>学习路径</Link>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-                  {/* 片段 */}
-                  {(tab === "all" || tab === "segments") && results.segments.length > 0 && (
-                    <div style={{ marginBottom: 24 }}>
-                      {tab === "all" && <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>时间片段 ({results.segments.length})</h3>}
-                      {results.segments.map((s, i) => (
-                        <div key={i} className="search-result-card">
-                          <div className="search-result-name">
-                            <a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}</a>
-                          </div>
-                          <div className="search-result-desc" style={{ marginTop: 4 }}>{s.content_preview}</div>
-                          <div className="search-result-actions">
-                            <a href={s.url} target="_blank" rel="noopener noreferrer" className="jump-bilibili-btn">
-                              ▶ 跳转到 B 站
-                            </a>
-                          </div>
+                {(tab === "all" || tab === "videos") && results.videos.length > 0 && (
+                  <div style={{ marginBottom: 24 }}>
+                    {tab === "all" && <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>视频 ({results.videos.length})</h3>}
+                    {results.videos.map((v: any) => (
+                      <div key={v.bvid} style={{ padding: "12px 16px", marginBottom: 8, borderRadius: 8, background: "var(--card-bg)", border: "1px solid var(--border)" }}>
+                        <a href={"https://www.bilibili.com/video/" + v.bvid} target="_blank" rel="noreferrer" style={{ fontWeight: 600, fontSize: 14, color: "var(--accent,#059669)", textDecoration: "none" }}>
+                          {v.title}
+                        </a>
+                        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>
+                          {v.owner_name && <span>UP: {v.owner_name} · </span>}
+                          {v.knowledge_node_count > 0 && <span>{v.knowledge_node_count} 知识点 · </span>}
+                          <Link href="/organizer" style={{ color: "#059669" }}>整理中心</Link>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-                  {totalCount === 0 && (
-                    <div className="tree-empty">
-                      <p>未找到与「{results.query}」相关的结果</p>
-                      <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>尝试使用不同的关键词，或减少筛选条件</p>
-                    </div>
-                  )}
-                </>
-              )}
+                {totalCount === 0 && (
+                  <div style={{ textAlign: "center", padding: 60, color: "var(--text-tertiary)" }}>
+                    <p style={{ fontSize: 15 }}>未找到相关结果</p>
+                  </div>
+                )}
+              </div>
+            )}
 
-              {!results && !loading && (
-                <div className="tree-empty">
-                  <p>{sessionId ? "输入关键词搜索知识节点、视频和时间片段" : "请先登录后再搜索当前账号知识库"}</p>
-                </div>
-              )}
-            </div>
+            {!results && !loading && (
+              <div style={{ textAlign: "center", padding: 80, color: "var(--text-tertiary)" }}>
+                <p style={{ fontSize: 15 }}>输入关键词搜索知识节点和视频</p>
+              </div>
+            )}
           </div>
         </div>
       </main>

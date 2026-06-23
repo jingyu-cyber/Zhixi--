@@ -66,3 +66,8 @@ Bilimind-main-v2/
 bilimind-workspace/
 mcp/
 debug-screenshots/
+
+# Dev tools (Claude Code)
+.mcp.json
+scripts/screenshot-app.js
+package.json

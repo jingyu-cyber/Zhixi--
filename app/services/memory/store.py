@@ -355,6 +355,7 @@ class MemoryStore:
             "working_count": 0, "short_term_count": 0, "long_term_count": 0,
             "episodic_count": 0, "semantic_count": 0, "procedural_count": 0,
             "total_evidences": 0,
+            "needs_review": 0, "strong_count": 0,
         }
         str_sum = {"working": 0.0, "short_term": 0.0, "long_term": 0.0}
 
@@ -382,6 +383,10 @@ class MemoryStore:
             else:
                 stats["semantic_count"] += 1
             stats["total_evidences"] += len(node.evidence_json or [])
+            if ms < 0.35:
+                stats["needs_review"] += 1
+            if ms > 0.7:
+                stats["strong_count"] += 1
 
         return MemoryStatsResponse(
             total_nodes=stats["total_nodes"],
@@ -395,6 +400,8 @@ class MemoryStore:
             avg_strength_working=round(str_sum["working"] / max(stats["working_count"], 1), 3),
             avg_strength_short_term=round(str_sum["short_term"] / max(stats["short_term_count"], 1), 3),
             avg_strength_long_term=round(str_sum["long_term"] / max(stats["long_term_count"], 1), 3),
+            needs_review=stats["needs_review"],
+            strong_count=stats["strong_count"],
         )
 
     # ==================== 持久化缓存 ====================

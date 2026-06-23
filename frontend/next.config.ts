@@ -5,6 +5,8 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // 允许来自 127.0.0.1 的开发请求（跨来源请求修复）
+  allowedDevOrigins: ['127.0.0.1', 'localhost'],
   // 允许加载外部图片
   images: {
     remotePatterns: [

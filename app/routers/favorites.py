@@ -32,6 +32,29 @@ def _is_default_folder(folder: dict) -> bool:
     return title == "默认收藏夹"
 
 
+def _classify_content_category_from_ugc(ugc: Optional[dict], duration: Optional[int] = None) -> Optional[str]:
+    """从 B站 ugc 字段 + 时长判断内容分类"""
+    # 优先检查 ugc 中的合集/系列标识
+    if ugc:
+        if ugc.get("season_id") or ugc.get("ogv_ep_id") or ugc.get("series_id"):
+            return "series"
+    # 兜底：根据时长推断（B站收藏夹API不一定返回season_id）
+    if duration is not None:
+        if duration > 7200:  # > 2小时 → 可能课程/合集
+            return "course"
+        if duration < 120:
+            return "short_video"
+    return "single_video"
+
+
+def _extract_ugc_season_name(ugc: Optional[dict]) -> Optional[str]:
+    """从 B站 ugc 字段提取合集名称"""
+    if not ugc:
+        return None
+    section = ugc.get("section") or {}
+    return section.get("title")
+
+
 class OrganizePreviewRequest(BaseModel):
     folder_id: int
 
@@ -142,6 +165,7 @@ async def get_favorite_videos(
         # 处理视频列表
         videos = []
         for media in result.get("medias", []):
+            ugc = media.get("ugc") or {}
             videos.append({
                 "bvid": media.get("bvid") or media.get("bv_id"),
                 "title": media.get("title"),
@@ -150,7 +174,11 @@ async def get_favorite_videos(
                 "owner": media.get("upper", {}).get("name"),
                 "play_count": media.get("cnt_info", {}).get("play"),
                 "intro": media.get("intro"),
-                "is_selected": True  # 默认选中
+                "is_selected": True,  # 默认选中
+                "content_category": _classify_content_category_from_ugc(ugc, media.get("duration")),
+                "series_name": _extract_ugc_season_name(ugc),
+                "series_key": str(ugc.get("season_id")) if ugc.get("season_id") else None,
+                "series_position": ugc.get("section", {}).get("index") if ugc.get("section") else None,
             })
         
         return {
@@ -209,7 +237,9 @@ async def get_all_favorite_videos(
                 "cover": media.get("cover"),
                 "duration": media.get("duration"),
                 "owner": media.get("upper", {}).get("name"),
-                "cid": media.get("ugc", {}).get("first_cid") if media.get("ugc") else None
+                "cid": media.get("ugc", {}).get("first_cid") if media.get("ugc") else None,
+                "content_category": _classify_content_category_from_ugc(media.get("ugc"), media.get("duration")),
+                "series_name": _extract_ugc_season_name(media.get("ugc")),
             })
         
         return {

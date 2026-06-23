@@ -8,12 +8,14 @@ interface KnowledgeMapProps {
 }
 
 export default function KnowledgeMap({ compileResult }: KnowledgeMapProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dims, setDims] = useState<{ w: number; h: number }>({ w: 800, h: 500 });
 
   useEffect(() => {
-    if (!svgRef.current || !compileResult) return;
+    if (!svgRef.current || !containerRef.current || !compileResult) return;
 
     let cancelled = false;
 
@@ -22,15 +24,31 @@ export default function KnowledgeMap({ compileResult }: KnowledgeMapProps) {
         const { Transformer } = await import("markmap-lib");
         const { Markmap } = await import("markmap-view");
 
-        if (cancelled || !svgRef.current) return;
+        if (cancelled || !svgRef.current || !containerRef.current) return;
 
-        // Wait for container to have valid dimensions
-        const rect = svgRef.current.getBoundingClientRect();
-        if (rect.width === 0 || rect.height === 0) {
-          // Retry after a short delay
-          setTimeout(() => { if (!cancelled) renderMap(); }, 200);
+        // Get container pixel dimensions
+        const rect = containerRef.current.getBoundingClientRect();
+        const w = Math.max(rect.width || containerRef.current.clientWidth || 800, 200);
+        const h = Math.max(rect.height || containerRef.current.clientHeight || 500, 200);
+
+        if (rect.width < 50 || rect.height < 50) {
+          const retries = (window as any).__markmapRetries || 0;
+          if (retries < 15) {
+            (window as any).__markmapRetries = retries + 1;
+            setTimeout(() => { if (!cancelled) renderMap(); }, 200);
+          } else {
+            setError('思维导图容器尺寸异常，请刷新页面');
+          }
           return;
         }
+        (window as any).__markmapRetries = 0;
+
+        // Set explicit pixel dimensions on SVG (required by markmap)
+        setDims({ w, h });
+        svgRef.current.setAttribute("width", String(w));
+        svgRef.current.setAttribute("height", String(h));
+        svgRef.current.style.width = w + "px";
+        svgRef.current.style.height = h + "px";
 
         // Build markdown from compile result
         const lines: string[] = [];
@@ -51,22 +69,20 @@ export default function KnowledgeMap({ compileResult }: KnowledgeMapProps) {
         const { root } = transformer.transform(markdown);
 
         // Clear existing content
-        while (svgRef.current && svgRef.current.firstChild) {
+        while (svgRef.current.firstChild) {
           svgRef.current.removeChild(svgRef.current.firstChild);
         }
 
-        if (svgRef.current) {
-          Markmap.create(svgRef.current, {
-            color: (node: any) => {
-              const depth = node.depth || 0;
-              const colors = ["#059669", "#3b82f6", "#8b5cf6", "#f59e0b", "#ef4444"];
-              return colors[depth % colors.length];
-            },
-            paddingX: 16,
-            autoFit: true,
-          }, root);
-          setLoaded(true);
-        }
+        Markmap.create(svgRef.current, {
+          color: (node: any) => {
+            const depth = node.depth || 0;
+            const colors = ["#059669", "#3b82f6", "#8b5cf6", "#f59e0b", "#ef4444"];
+            return colors[depth % colors.length];
+          },
+          paddingX: 16,
+          autoFit: true,
+        }, root);
+        setLoaded(true);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to render mind map");
@@ -90,7 +106,7 @@ export default function KnowledgeMap({ compileResult }: KnowledgeMapProps) {
   }
 
   return (
-    <div className="markmap-container">
+    <div className="markmap-container" ref={containerRef}>
       {!loaded && (
         <div style={{
           display: "flex",
@@ -105,7 +121,9 @@ export default function KnowledgeMap({ compileResult }: KnowledgeMapProps) {
       )}
       <svg
         ref={svgRef}
-        style={{ width: "100%", height: "100%", display: loaded ? "block" : "none" }}
+        width={dims.w}
+        height={dims.h}
+        style={{ display: loaded ? "block" : "none" }}
       />
     </div>
   );

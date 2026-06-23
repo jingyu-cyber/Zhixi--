@@ -33,6 +33,50 @@ from app.routers.auth import get_session
 router = APIRouter(prefix="/compile", tags=["知识编译"])
 
 
+# ==================== 辅助函数 ====================
+
+def _classify_from_video_info(video_info: dict) -> Optional[str]:
+    """从 B站 API video_info 判断内容类型"""
+    if not video_info:
+        return None
+    pages = video_info.get("pages") or []
+    duration = video_info.get("duration", 0)
+    # 多P视频 → course（需要展开分集编译）
+    if len(pages) > 1:
+        return "course"
+    if duration and duration < 120:
+        return "short_video"
+    if duration and duration > settings.max_compile_duration:
+        return "course"
+    return "single_video"
+
+
+def _extract_season_key(video_info: dict) -> Optional[str]:
+    """从 video_info 提取合集/系列标识"""
+    if not video_info:
+        return None
+    ugc_season = video_info.get("ugc_season")
+    if ugc_season:
+        return str(ugc_season.get("id") or ugc_season.get("season_id") or "")
+    pages = video_info.get("pages") or []
+    if len(pages) > 1:
+        return f"multi_p_{video_info.get('aid', '')}"
+    return None
+
+
+def _extract_season_name(video_info: dict) -> Optional[str]:
+    """从 video_info 提取合集/系列名称"""
+    if not video_info:
+        return None
+    ugc_season = video_info.get("ugc_season")
+    if ugc_season:
+        return ugc_season.get("title") or ugc_season.get("name") or "合集视频"
+    pages = video_info.get("pages") or []
+    if len(pages) > 1:
+        return video_info.get("title", "多P视频")
+    return None
+
+
 # ==================== 任务状态存储 ====================
 
 compile_tasks: dict[str, dict] = {}
@@ -44,6 +88,8 @@ class CompileRequest(BaseModel):
     """编译请求"""
     bvid: str
     session_id: str
+    cid: Optional[int] = None  # 可选，指定分P进行单集编译
+    page_title: Optional[str] = None  # 可选，分集标题
 
 
 class CompileTaskResponse(BaseModel):
@@ -57,6 +103,54 @@ class CompileStatusResponse(BaseModel):
     status: str  # running / completed / failed
     progress: float
     message: str
+
+
+# ==================== GET /compile/pages/{bvid} ====================
+
+@router.get("/pages/{bvid}")
+async def get_video_pages(
+    bvid: str,
+    session_id: str = Query(..., description="会话ID"),
+):
+    """
+    获取多P视频的分集列表，用于展开课程目录
+    """
+    session = await get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=401, detail="未登录或会话已过期")
+    cookies = session.get("cookies", {})
+    bili = BilibiliService(
+        sessdata=cookies.get("SESSDATA"),
+        bili_jct=cookies.get("bili_jct"),
+        dedeuserid=cookies.get("DedeUserID"),
+    )
+    try:
+        video_info = await bili.get_video_info(bvid)
+        if not video_info:
+            raise HTTPException(status_code=404, detail="视频不存在")
+        pages = video_info.get("pages") or []
+        result_pages = []
+        for p in pages:
+            result_pages.append({
+                "cid": p.get("cid"),
+                "page": p.get("page"),
+                "part": p.get("part", f"第{p.get('page', '?')}集"),
+                "duration": p.get("duration", 0),
+            })
+        return {
+            "bvid": bvid,
+            "title": video_info.get("title", ""),
+            "total_duration": video_info.get("duration", 0),
+            "pages_count": len(pages),
+            "pages": result_pages,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取分集列表失败 [{bvid}]: {e}")
+        raise HTTPException(status_code=500, detail=f"获取分集失败: {e}")
+    finally:
+        await bili.close()
 
 
 # ==================== POST /compile/video ====================
@@ -87,6 +181,8 @@ async def compile_video_endpoint(
         task_id,
         request.bvid,
         request.session_id,
+        request.cid,
+        request.page_title,
     )
 
     return CompileTaskResponse(task_id=task_id, message="编译已开始")
@@ -96,9 +192,12 @@ async def _compile_video_task(
     task_id: str,
     bvid: str,
     session_id: str,
+    page_cid: Optional[int] = None,
+    page_title: Optional[str] = None,
 ):
-    """后台编译任务"""
+    """后台编译任务。page_cid 可选，用于分集编译"""
     try:
+        is_single_page = bool(page_cid)
         compile_tasks[task_id]["status"] = "running"
         compile_tasks[task_id]["progress"] = 0.1
         compile_tasks[task_id]["message"] = "正在获取视频内容..."
@@ -120,20 +219,65 @@ async def _compile_video_task(
             compile_tasks[task_id]["message"] = "正在编译知识结构..."
 
             async with get_db_context() as db:
-                # 检查视频时长，超长视频拒绝编译
+                # 检查视频信息（时长 + 合集），超长/合集视频拒绝编译
                 vc_result = await db.execute(
                     select(VideoCache).where(VideoCache.bvid == bvid)
                 )
                 video_cache = vc_result.scalar_one_or_none()
-                if video_cache and video_cache.duration and video_cache.duration > settings.max_compile_duration:
-                    hours = video_cache.duration / 3600
-                    compile_tasks[task_id]["status"] = "failed"
-                    compile_tasks[task_id]["message"] = (
-                        f"视频时长 {hours:.1f} 小时，超过编译上限 {settings.max_compile_duration / 3600:.0f} 小时。"
-                        f"请确认该视频是否为合集/课程，若是请先拆分后再编译。"
-                    )
-                    logger.warning(f"[{bvid}] 编译被拒绝: 时长 {hours:.1f}h > 上限 {settings.max_compile_duration / 3600:.0f}h")
-                    return
+
+                # 如果 VideoCache 还未缓存，从 B站 API 获取视频信息预填充
+                if not video_cache or not video_cache.duration:
+                    try:
+                        video_info = await bili.get_video_info(bvid)
+                        if video_info:
+                            duration = video_info.get("duration") or 0
+                            if not video_cache:
+                                video_cache = VideoCache(
+                                    bvid=bvid,
+                                    cid=video_info.get("cid"),
+                                    title=video_info.get("title", "未知标题"),
+                                    description=video_info.get("desc", ""),
+                                    owner_name=(video_info.get("owner") or {}).get("name", ""),
+                                    owner_mid=(video_info.get("owner") or {}).get("mid"),
+                                    duration=duration,
+                                    pic_url=video_info.get("pic", ""),
+                                    source_type="bilibili",
+                                    source_url=f"https://www.bilibili.com/video/{bvid}",
+                                    content_source="unknown",
+                                    is_processed=False,
+                                    extraction_status="pending",
+                                    session_id=session_id,
+                                    content_category=_classify_from_video_info(video_info),
+                                    series_key=_extract_season_key(video_info),
+                                    series_name=_extract_season_name(video_info),
+                                )
+                                db.add(video_cache)
+                                await db.flush()
+                                logger.info(f"[{bvid}] 预创建 VideoCache: duration={duration}s, category={video_cache.content_category}")
+                            elif not video_cache.duration:
+                                video_cache.duration = duration
+                                video_cache.content_category = video_cache.content_category or _classify_from_video_info(video_info)
+                                video_cache.series_key = video_cache.series_key or _extract_season_key(video_info)
+                                await db.flush()
+                    except Exception as e:
+                        logger.warning(f"[{bvid}] 获取视频信息失败(预检查): {e}")
+
+                # 检查视频时长（分集编译时跳过，因为单集时长在限制内）
+                if not is_single_page:
+                    if video_cache and video_cache.duration and video_cache.duration > settings.max_compile_duration:
+                        hours = video_cache.duration / 3600
+                        hint = ""
+                        if video_cache.content_category == "course":
+                            hint = "这是多集课程合集，请点击左侧展开箭头，选择单集编译。"
+                        elif hours > 24:
+                            hint = "疑似多集课程合集，请检查确认。"
+                        compile_tasks[task_id]["status"] = "failed"
+                        compile_tasks[task_id]["message"] = (
+                            f"❌ 视频时长 {hours:.1f} 小时，超过编译上限 {settings.max_compile_duration / 3600:.0f} 小时。 "
+                            + hint
+                        )
+                        logger.warning(f"[{bvid}] 编译被拒绝: 时长 {hours:.1f}h > 上限 {settings.max_compile_duration / 3600:.0f}h")
+                        return
 
                 owner_mid = await _resolve_owner_mid(db, session_id)
                 result = await compile_video(
@@ -142,6 +286,8 @@ async def _compile_video_task(
                     session_id=session_id,
                     content_fetcher=content_fetcher,
                     owner_mid=owner_mid,
+                    page_cid=page_cid,
+                    page_title=page_title,
                 )
 
             compile_tasks[task_id]["status"] = "completed"
@@ -157,10 +303,13 @@ async def _compile_video_task(
             await bili.close()
 
     except Exception as e:
+        error_msg = str(e)
+        if "database is locked" in error_msg:
+            error_msg = "数据库繁忙，请稍后重试（并发编译过多）"
         logger.error(f"编译任务失败 [{bvid}]: {e}")
         compile_tasks[task_id]["status"] = "failed"
         compile_tasks[task_id]["progress"] = 0.0
-        compile_tasks[task_id]["message"] = f"编译失败: {e}"
+        compile_tasks[task_id]["message"] = f"编译失败: {error_msg}"
 
 
 # ==================== GET /compile/status/{task_id} ====================

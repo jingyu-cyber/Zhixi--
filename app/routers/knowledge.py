@@ -152,8 +152,22 @@ async def _get_or_create_folder(
     return folder
 
 
-def _extract_video_info(media: dict) -> tuple[str, str, Optional[int]]:
-    """抽取视频关键信息"""
+def _classify_content_category(
+    season_id: Optional[int] = None,
+    duration: Optional[int] = None,
+) -> Optional[str]:
+    """根据视频属性分类内容类型"""
+    if season_id:
+        return "series"
+    if duration is not None and duration < 120:
+        return "short_video"
+    if duration is not None and duration > 7200:  # > 2小时
+        return "course"
+    return "single_video"
+
+
+def _extract_video_info(media: dict) -> dict:
+    """抽取视频关键信息，包含合集/系列识别"""
     bvid = media.get("bvid") or media.get("bv_id")
     title = media.get("title", bvid)
     cid = None
@@ -162,7 +176,27 @@ def _extract_video_info(media: dict) -> tuple[str, str, Optional[int]]:
         cid = ugc.get("first_cid")
     else:
         cid = media.get("cid") or media.get("id")
-    return bvid, title, cid
+
+    # 合集/系列检测
+    season_id = None
+    season_name = None
+    is_collection = False
+    if ugc:
+        season_id = ugc.get("season_id") or ugc.get("ogv_ep_id") or ugc.get("series_id")
+        section = ugc.get("section") or {}
+        if section:
+            season_name = section.get("title")
+        if season_id:
+            is_collection = True
+
+    return {
+        "bvid": bvid,
+        "title": title,
+        "cid": cid,
+        "season_id": season_id,
+        "season_name": season_name,
+        "is_collection": is_collection,
+    }
 
 
 async def _upsert_video_cache(db: AsyncSession, bvid: str, meta: dict, session_id: Optional[str] = None) -> None:
@@ -171,6 +205,7 @@ async def _upsert_video_cache(db: AsyncSession, bvid: str, meta: dict, session_i
     cache = result.scalar_one_or_none()
 
     if cache is None:
+        series_key = str(meta.get("series_key")) if meta.get("series_key") else None
         cache = VideoCache(
             bvid=bvid,
             title=meta.get("title") or bvid,
@@ -181,6 +216,10 @@ async def _upsert_video_cache(db: AsyncSession, bvid: str, meta: dict, session_i
             pic_url=meta.get("cover"),
             is_processed=False,
             session_id=session_id,
+            content_category=meta.get("content_category"),
+            series_key=series_key,
+            series_name=meta.get("series_name"),
+            series_position=meta.get("series_position"),
         )
         db.add(cache)
         return
@@ -196,6 +235,15 @@ async def _upsert_video_cache(db: AsyncSession, bvid: str, meta: dict, session_i
         cache.duration = meta.get("duration")
     if meta.get("cover") is not None:
         cache.pic_url = meta.get("cover")
+    # 合集/系列字段更新
+    if meta.get("content_category") is not None:
+        cache.content_category = meta.get("content_category")
+    if meta.get("series_key") is not None:
+        cache.series_key = str(meta.get("series_key"))
+    if meta.get("series_name") is not None:
+        cache.series_name = meta.get("series_name")
+    if meta.get("series_position") is not None:
+        cache.series_position = meta.get("series_position")
 
 
 async def _sync_folder(
@@ -240,12 +288,15 @@ async def _sync_folder(
     video_map = {}
     skipped_invalid = 0
     for media in videos:
-        bvid, title, cid = _extract_video_info(media)
+        info = _extract_video_info(media)
+        bvid = info["bvid"]
+        title = info["title"]
+        cid = info["cid"]
         if not bvid:
             continue
         if exclude_bvids and bvid in exclude_bvids:
             continue
-        
+
         # 过滤失效视频（被删除、下架等）
         # attr 字段: 0=正常, 9=已失效, 1=私密等
         attr = media.get("attr", 0)
@@ -253,16 +304,24 @@ async def _sync_folder(
             skipped_invalid += 1
             logger.debug(f"跳过失效视频: {bvid} - {title}")
             continue
-        
+
+        duration = media.get("duration")
         owner = media.get("upper") or {}
         video_map[bvid] = {
             "title": title,
             "cid": cid,
             "intro": media.get("intro"),
             "cover": media.get("cover"),
-            "duration": media.get("duration"),
+            "duration": duration,
             "owner_name": owner.get("name"),
             "owner_mid": owner.get("mid"),
+            "content_category": _classify_content_category(
+                season_id=info["season_id"],
+                duration=duration,
+            ),
+            "series_key": info["season_id"] or None,
+            "series_name": info["season_name"] or None,
+            "series_position": None,
         }
     
     if skipped_invalid > 0:

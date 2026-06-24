@@ -129,18 +129,55 @@ export default function VideoPlayer({ bvid, title }: VideoPlayerProps) {
             zIndex: 9999,
             background: "rgba(0,0,0,0.93)",
             display: "flex",
+            flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            padding: 24,
           }}
         >
+          {/* Top bar with title + close button */}
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
               width: "100%",
               maxWidth: 1400,
-              borderRadius: 12,
-              overflow: "hidden",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "8px 16px",
+              background: "rgba(0,0,0,0.85)",
+              color: "#fff",
+              fontSize: 13,
+              borderRadius: "12px 12px 0 0",
+              gap: 12,
+            }}
+          >
+            <span style={{ opacity: 0.9, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title || bvid}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+              <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 11 }}>点击播放器内齿轮图标调倍速</span>
+              <button
+                onClick={toggleFullscreen}
+                style={{
+                  background: "rgba(255,255,255,0.15)",
+                  border: "1px solid rgba(255,255,255,0.25)",
+                  color: "#fff",
+                  borderRadius: 6,
+                  padding: "5px 14px",
+                  cursor: "pointer",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                收起
+              </button>
+            </div>
+          </div>
+          {/* Video */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 1400,
               boxShadow: "0 8px 48px rgba(0,0,0,0.6)",
             }}
           >
@@ -152,34 +189,6 @@ export default function VideoPlayer({ bvid, title }: VideoPlayerProps) {
                 allow="autoplay; fullscreen"
                 title={`B站全屏: ${title || bvid}`}
               />
-            </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "10px 16px",
-                background: "rgba(0,0,0,0.9)",
-                color: "#fff",
-                fontSize: 13,
-              }}
-            >
-              <span style={{ opacity: 0.8 }}>{title || bvid}</span>
-              <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 11 }}>点击播放器内齿轮图标调倍速</span>
-              <button
-                onClick={toggleFullscreen}
-                style={{
-                  background: "rgba(255,255,255,0.15)",
-                  border: "1px solid rgba(255,255,255,0.25)",
-                  color: "#fff",
-                  borderRadius: 6,
-                  padding: "6px 16px",
-                  cursor: "pointer",
-                  fontSize: 13,
-                }}
-              >
-                收起
-              </button>
             </div>
           </div>
         </div>

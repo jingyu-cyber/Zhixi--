@@ -80,6 +80,7 @@ export function setAuthSession(sessionId: string, userName: string): void {
 export function clearAuthSession(): void {
   safeRemove(SESSION_KEY);
   safeRemove(USER_NAME_KEY);
+  safeRemove("bilimind_remember");
 }
 
 /**

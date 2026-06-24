@@ -335,7 +335,7 @@ export default function Home() {
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
           <button
             className="zhiying-cta"
-            onClick={() => router.push("/workspace")}
+            onClick={() => setShowLogin(true)}
           >
             开始使用
           </button>

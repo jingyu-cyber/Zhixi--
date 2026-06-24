@@ -58,6 +58,7 @@ export default function WorkspacePage() {
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [batchMessage, setBatchMessage] = useState("");
   const [videoLoadError, setVideoLoadError] = useState("");
+  const [compileError, setCompileError] = useState("");
   const [expandedCourses, setExpandedCourses] = useState<Set<string>>(new Set());
   const [coursePages, setCoursePages] = useState<Record<string, VideoPageInfo[]>>({});
   const [loadingPages, setLoadingPages] = useState<Set<string>>(new Set());
@@ -206,7 +207,11 @@ export default function WorkspacePage() {
 
   // Compile video (supports per-page cid)
   const handleCompile = async (bvid: string, cid?: number, pageTitle?: string) => {
-    if (!sessionId) return;
+    if (!sessionId) {
+      setCompileError("会话已过期，请刷新页面重新登录");
+      return;
+    }
+    setCompileError("");
 
     const compileKey = cid ? `${bvid}_p${cid}` : bvid;
     setCompiling(compileKey);
@@ -246,15 +251,17 @@ export default function WorkspacePage() {
           } else {
             setTimeout(poll, 2000);
           }
-        } catch {
+        } catch (e: any) {
           if (compilePollIdRef.current === pollId && isActiveSession(activeSessionId)) {
             setCompiling(null);
+            setCompileError(e?.message || "编译失败，请重试");
           }
         }
       };
       setTimeout(poll, 2000);
-    } catch {
+    } catch (e: any) {
       setCompiling(null);
+      setCompileError(e?.message || "启动编译失败，请检查网络或重新登录");
     }
   };
 
@@ -577,6 +584,25 @@ export default function WorkspacePage() {
                 })
               )}
             </div>
+
+            {/* Compile error banner */}
+            {compileError && (
+              <div style={{
+                background: "#fef2f2",
+                border: "1px solid #fecaca",
+                color: "#dc2626",
+                padding: "10px 16px",
+                borderRadius: 8,
+                margin: "8px 0",
+                fontSize: 13,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}>
+                <span>⚠ {compileError}</span>
+                <button onClick={() => setCompileError("")} style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 16 }}>×</button>
+              </div>
+            )}
 
             {/* Center: Main panel with tabs */}
             <div className="workspace-main">

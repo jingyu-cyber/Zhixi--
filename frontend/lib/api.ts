@@ -22,29 +22,42 @@ async function request<T>(
 ): Promise<T> {
     const url = `${API_BASE_URL}${endpoint}`;
 
-    const response = await fetch(url, {
+    // 30 秒超时，防止请求卡死
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    try {
+      const response = await fetch(url, {
         ...options,
+        signal: controller.signal,
         headers: {
             "Content-Type": "application/json",
             ...options.headers,
         },
-    });
+      });
+      clearTimeout(timeoutId);
 
-    // 会话失效时自动清除登录状态并通知导航
-    if (response.status === 401) {
-        if (typeof window !== "undefined") {
-            clearAuthSession();
-            window.dispatchEvent(new CustomEvent("bilimind:session-expired"));
-        }
-        throw new Error("会话已过期，请重新登录");
+      // 会话失效时自动清除登录状态并通知导航
+      if (response.status === 401) {
+          if (typeof window !== "undefined") {
+              clearAuthSession();
+              window.dispatchEvent(new CustomEvent("bilimind:session-expired"));
+          }
+          throw new Error("会话已过期，请重新登录");
+      }
+
+      if (!response.ok) {
+          const error = await response.text();
+          throw new Error(error || `请求失败: ${response.status}`);
+      }
+
+      return response.json();
+    } catch (e: any) {
+      clearTimeout(timeoutId);
+      if (e.name === "AbortError") {
+        throw new Error("请求超时（30秒），请检查网络连接");
+      }
+      throw e;
     }
-
-    if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error || `请求失败: ${response.status}`);
-    }
-
-    return response.json();
 }
 
 // ==================== 类型定义 ====================

@@ -730,12 +730,21 @@ async def _build_knowledge_base_task(
         rag = get_rag_service()
 
         try:
+            # 如果未指定文件夹，自动获取该 session 所有已同步的收藏夹
+            if not folder_ids:
+                async with get_db_context() as db:
+                    rows = await db.execute(
+                        select(FavoriteFolder.media_id)
+                        .where(FavoriteFolder.session_id == session_id)
+                        .order_by(FavoriteFolder.updated_at.desc())
+                    )
+                    folder_ids = list(dict.fromkeys(r[0] for r in rows.fetchall()))
+                if not folder_ids:
+                    build_tasks[task_id]["status"] = "completed"
+                    build_tasks[task_id]["progress"] = 100
+                    build_tasks[task_id]["message"] = "没有已同步的收藏夹，请先在首页同步"
+                    return
             total_folders = len(folder_ids)
-            if total_folders == 0:
-                build_tasks[task_id]["status"] = "completed"
-                build_tasks[task_id]["progress"] = 100
-                build_tasks[task_id]["message"] = "没有需要处理的收藏夹"
-                return
 
             processed = 0
             total_added = 0

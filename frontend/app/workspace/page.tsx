@@ -60,7 +60,6 @@ export default function WorkspacePage() {
   const [batchMessage, setBatchMessage] = useState("");
   const [videoLoadError, setVideoLoadError] = useState("");
   const [compileError, setCompileError] = useState("");
-  const [chatCollapsed, setChatCollapsed] = useState(false);  // Jingyu: 右侧证据栏折叠
   const [expandedCourses, setExpandedCourses] = useState<Set<string>>(new Set());
   const [coursePages, setCoursePages] = useState<Record<string, VideoPageInfo[]>>({});
   const [loadingPages, setLoadingPages] = useState<Set<string>>(new Set());

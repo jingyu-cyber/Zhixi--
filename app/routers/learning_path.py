@@ -19,6 +19,7 @@ from openai import AsyncOpenAI
 
 from app.database import get_db
 from app.models import KnowledgeNode, NodeSegmentLink, Segment, VideoCache, _fmt_time
+from app.utils import resolve_owner_mid as _resolve_owner_mid  # Jingyu: 模块级导入
 from app.config import settings
 from app.services.graph_store import GraphStore
 from app.services.path_recommender import PathRecommender

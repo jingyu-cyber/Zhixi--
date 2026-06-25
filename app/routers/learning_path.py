@@ -182,8 +182,12 @@ async def get_popular_topics(
     session_id: Optional[str] = Query(None, description="会话ID，用于数据隔离"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Jingyu: 获取热门学习目标（按 source_count 排序，兼容演示用户 source_count=1）"""
-    owner_mid = await _resolve_owner_mid(db, session_id)
+    """Jingyu: 获取热门学习目标（按 source_count 排序，演示用户共享全部数据）"""
+    # 演示用户/未登录：共享全部数据；真实用户：按 owner_mid 隔离
+    if _is_shared_session(session_id):
+        owner_mid = None
+    else:
+        owner_mid = await _resolve_owner_mid(db, session_id)
     stmt = (
         select(KnowledgeNode)
         .where(
@@ -195,8 +199,6 @@ async def get_popular_topics(
     )
     if owner_mid is not None:
         stmt = stmt.where(KnowledgeNode.owner_mid == owner_mid)
-    elif session_id and not session_id.startswith("demo_"):
-        stmt = stmt.where(KnowledgeNode.session_id == session_id)
     result = await db.execute(stmt)
     nodes = result.scalars().all()
     items = []

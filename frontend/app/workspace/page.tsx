@@ -696,8 +696,8 @@ export default function WorkspacePage() {
               </div>
             </div>
 
-            {/* Evidence chat — inline at bottom of main */}
-            <div className="workspace-chat-inline">
+            {/* Jingyu: Evidence chat — right sidebar panel */}
+            <div className="workspace-chat-panel">
               <EvidenceChat bvid={selectedBvid} />
             </div>
           </div>

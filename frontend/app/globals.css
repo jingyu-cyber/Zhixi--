@@ -3779,7 +3779,8 @@ a { color: inherit; text-decoration: none; }
 .workspace-tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
 .workspace-tab:hover { color: var(--ink); }
 .workspace-content { flex: 1; overflow-y: auto; padding: 12px; min-height: 0; }
-.workspace-chat-inline { border-top: 1px solid var(--border); max-height: 280px; min-height: 160px; width: 46%; max-width: 420px; display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; align-self: flex-end; }
+/* Jingyu: Evidence chat as proper right sidebar panel */
+.workspace-chat-panel { width: 360px; min-width: 260px; max-width: 420px; border-left: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
 
 /* Video sidebar */
 .video-sidebar-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; transition: background 0.15s; }

@@ -221,9 +221,13 @@ async def get_popular_topics(
             "source_count": n.source_count,
             "video_count": vid_count or 0,
         })
-    # Jingyu: demo用户只返回owner_mid=0的节点
-    if session_id and session_id.startswith("demo_"):
-        items = [it for it in items if it["source_count"] > 0]
+    # Jingyu: 按名称去重，保留 source_count 最高的
+    seen: dict[str, dict] = {}
+    for it in items:
+        key = it["name"].strip().lower()
+        if key not in seen or it["source_count"] > seen[key]["source_count"]:
+            seen[key] = it
+    items = sorted(seen.values(), key=lambda x: x["source_count"], reverse=True)[:limit]
     return items
 
 

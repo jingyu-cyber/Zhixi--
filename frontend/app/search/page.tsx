@@ -18,11 +18,17 @@ export default function SearchPage() {
       const base = window.location.hostname === "localhost"
         ? "http://localhost:8000"
         : "/api/proxy";
-      const resp = await fetch(base + "/search?q=" + encodeURIComponent(q) + "&type=all&limit=20");
+      const sid = typeof window !== "undefined" ? localStorage.getItem("bilimind_session") || "" : "";
+      const resp = await fetch(base + "/search?q=" + encodeURIComponent(q) + "&type=all&limit=20&session_id=" + encodeURIComponent(sid));
       const data = await resp.json();
-      setResults(data);
+      // Jingyu: 防御性处理，确保字段至少是空数组
+      setResults({
+        nodes: Array.isArray(data.nodes) ? data.nodes : [],
+        videos: Array.isArray(data.videos) ? data.videos : [],
+      });
     } catch (e) {
       console.error(e);
+      setResults({ nodes: [], videos: [] });
     }
     setLoading(false);
   };
@@ -33,9 +39,9 @@ export default function SearchPage() {
     { key: "videos", label: "视频" },
   ];
 
-  const nodeCount = results?.nodes?.length || 0;
-  const videoCount = results?.videos?.length || 0;
-  const totalCount = nodeCount + videoCount;
+  const nodes = results?.nodes || [];
+  const videos = results?.videos || [];
+  const totalCount = nodes.length + videos.length;
 
   return (
     <div className="app-shell">
@@ -70,7 +76,7 @@ export default function SearchPage() {
                 {tabs.map((t) => (
                   <button key={t.key} onClick={() => setTab(t.key)}
                     style={{ padding: "6px 16px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 13, fontWeight: tab === t.key ? 600 : 400, background: tab === t.key ? "var(--accent,#059669)" : "transparent", color: tab === t.key ? "#fff" : "var(--text-secondary)" }}>
-                    {t.label}{t.key === "all" && totalCount > 0 ? " (" + totalCount + ")" : ""}{t.key === "nodes" && nodeCount > 0 ? " (" + nodeCount + ")" : ""}{t.key === "videos" && videoCount > 0 ? " (" + videoCount + ")" : ""}
+                    {t.label}{" "}{t.key === "all" ? `(${totalCount})` : t.key === "nodes" ? `(${nodes.length})` : `(${videos.length})`}
                   </button>
                 ))}
               </div>
@@ -78,13 +84,13 @@ export default function SearchPage() {
 
             {results && !loading && (
               <div>
-                {(tab === "all" || tab === "nodes") && results.nodes.length > 0 && (
+                {(tab === "all" || tab === "nodes") && nodes.length > 0 && (
                   <div style={{ marginBottom: 24 }}>
-                    {tab === "all" && <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>知识节点 ({results.nodes.length})</h3>}
-                    {results.nodes.map((n: any) => (
+                    {tab === "all" && <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>知识节点 ({nodes.length})</h3>}
+                    {nodes.map((n: any) => (
                       <div key={n.id} style={{ padding: "12px 16px", marginBottom: 8, borderRadius: 8, background: "var(--card-bg)", border: "1px solid var(--border)" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                          <span style={{ padding: "2px 8px", borderRadius: 4, fontSize: 11, background: "#e0f2fe", color: "#0369a1" }}>{n.node_type}</span>
+                          <span style={{ padding: "2px 8px", borderRadius: 4, fontSize: 11, background: "#e0f2fe", color: "#0369a1" }}>{n.node_type || "concept"}</span>
                           <Link href={"/node/" + n.id} style={{ fontWeight: 600, fontSize: 15, color: "var(--text-primary)", textDecoration: "none" }}>{n.name}</Link>
                         </div>
                         {n.definition && <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0" }}>{n.definition.slice(0, 120)}</p>}
@@ -97,10 +103,10 @@ export default function SearchPage() {
                   </div>
                 )}
 
-                {(tab === "all" || tab === "videos") && results.videos.length > 0 && (
+                {(tab === "all" || tab === "videos") && videos.length > 0 && (
                   <div style={{ marginBottom: 24 }}>
-                    {tab === "all" && <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>视频 ({results.videos.length})</h3>}
-                    {results.videos.map((v: any) => (
+                    {tab === "all" && <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>视频 ({videos.length})</h3>}
+                    {videos.map((v: any) => (
                       <div key={v.bvid} style={{ padding: "12px 16px", marginBottom: 8, borderRadius: 8, background: "var(--card-bg)", border: "1px solid var(--border)" }}>
                         <a href={"https://www.bilibili.com/video/" + v.bvid} target="_blank" rel="noreferrer" style={{ fontWeight: 600, fontSize: 14, color: "var(--accent,#059669)", textDecoration: "none" }}>
                           {v.title}
@@ -117,7 +123,9 @@ export default function SearchPage() {
 
                 {totalCount === 0 && (
                   <div style={{ textAlign: "center", padding: 60, color: "var(--text-tertiary)" }}>
+                    <p style={{ fontSize: 48, marginBottom: 16 }}>🔍</p>
                     <p style={{ fontSize: 15 }}>未找到相关结果</p>
+                    <p style={{ fontSize: 13, marginTop: 8 }}>试试其他关键词，或先去工作台编译视频</p>
                   </div>
                 )}
               </div>

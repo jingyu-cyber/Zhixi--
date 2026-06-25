@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import NavSidebar from "@/components/NavSidebar";
@@ -12,17 +12,89 @@ interface Message {
   content: string;
 }
 
+function getSessionId(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return localStorage.getItem("bilimind_session") || "";
+  } catch { return ""; }
+}
+
+function getUserName(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return localStorage.getItem("bilimind_user_name") || "";
+  } catch { return ""; }
+}
+
 export default function AgentPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [hasKnowledge, setHasKnowledge] = useState(false);
   const chatEnd = useRef<HTMLDivElement>(null);
+  const loadedRef = useRef(false);
 
   useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  // Jingyu: Load user's knowledge context and chat history on mount
+  useEffect(() => {
+    if (loadedRef.current) return;
+    loadedRef.current = true;
+    const sid = getSessionId();
+    if (!sid) return;
+
+    const base = window.location.hostname === "localhost" ? "http://localhost:8000" : "/api/proxy";
+
+    // Load knowledge stats for dynamic suggestions
+    fetch(base + "/tree/graph?session_id=" + sid)
+      .then(r => r.json())
+      .then(data => {
+        const nodes = data.nodes || [];
+        if (nodes.length > 0) {
+          setHasKnowledge(true);
+          // Jingyu: Generate suggestions from actual knowledge concepts
+          const concepts = nodes
+            .filter((n: any) => n.node_type === "concept")
+            .slice(0, 6);
+          const dynamicSuggestions = concepts.map((c: any) =>
+            `请详细解释「${c.name}」这个概念`
+          );
+          if (dynamicSuggestions.length >= 2) {
+            dynamicSuggestions.push(`总结${getUserName() || "我"}的知识库中有哪些主要知识点`);
+          }
+          setSuggestions(dynamicSuggestions.length > 0 ? dynamicSuggestions : [
+            "我的知识库中有哪些核心概念",
+            "帮我总结知识库的主要内容",
+            "根据我的收藏视频推荐学习路径",
+            "列出知识库中置信度最高的知识点",
+          ]);
+        }
+      })
+      .catch(() => {});
+
+    // Jingyu: Load recent chat history
+    fetch(base + "/agent/conversations?session_id=" + sid)
+      .then(r => r.json())
+      .then(data => {
+        const convs = data.conversations || data || [];
+        if (convs.length > 0) {
+          const latest = convs[0];
+          if (latest.messages && latest.messages.length > 0) {
+            setMessages(latest.messages.map((m: any) => ({
+              role: m.role,
+              content: m.content,
+            })));
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const ask = async () => {
     const q = input.trim();
     if (!q || loading) return;
+    const sid = getSessionId();
     setInput("");
     setMessages(prev => [...prev, { role: "user", content: q }]);
     setLoading(true);
@@ -31,7 +103,7 @@ export default function AgentPage() {
       const resp = await fetch(base + "/agent/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q, session_id: "x" }),
+        body: JSON.stringify({ question: q, session_id: sid }),
       });
       const data = await resp.json();
       setMessages(prev => [...prev, { role: "assistant", content: data.answer || "抱歉，暂未找到相关信息。" }]);
@@ -40,13 +112,6 @@ export default function AgentPage() {
     }
     setLoading(false);
   };
-
-  const suggestions = [
-    "高等数学有哪些核心概念",
-    "C语言指针怎么理解",
-    "线性代数特征值详解",
-    "数据库事务ACID是什么",
-  ];
 
   return (
     <div className="app-shell">
@@ -67,9 +132,11 @@ export default function AgentPage() {
                   </div>
                   <p style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>你好！我是小映</p>
                   <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20 }}>
-                    你的AI知识助手，基于知识库为你解答问题
+                    {hasKnowledge
+                      ? `你的AI知识助手，已学习你的 ${getUserName() || ""} 知识库，可以回答相关问题`
+                      : "你的AI知识助手，基于知识库为你解答问题"}
                   </p>
-                  <div style={{ display: "grid", gap: 8, maxWidth: 400, margin: "0 auto" }}>
+                  <div style={{ display: "grid", gap: 8, maxWidth: 440, margin: "0 auto" }}>
                     {suggestions.map((s, i) => (
                       <button key={i} onClick={() => { setInput(s); }}
                         style={{ textAlign: "left", padding: "10px 18px", borderRadius: 10, background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--ink-soft)", fontSize: 13, cursor: "pointer" }}>

@@ -503,6 +503,8 @@ class ChatMessage(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     conversation_id = Column(Integer, ForeignKey('conversations.id'), index=True, nullable=False)
+    session_id = Column(String(64), index=True, nullable=True)  # Jingyu: 用户会话归属
+    owner_mid = Column(Integer, index=True, nullable=True)       # Jingyu: B站用户ID归属
     role = Column(String(10), nullable=False)  # 'user' or 'assistant'
     content = Column(Text, nullable=False)
     sources_json = Column(JSON, nullable=True)  # 来源视频引用

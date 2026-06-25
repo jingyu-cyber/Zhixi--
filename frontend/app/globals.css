@@ -3779,8 +3779,11 @@ a { color: inherit; text-decoration: none; }
 .workspace-tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
 .workspace-tab:hover { color: var(--ink); }
 .workspace-content { flex: 1; overflow-y: auto; padding: 12px; min-height: 0; }
-/* Jingyu: Evidence chat as proper right sidebar panel */
-.workspace-chat-panel { width: 360px; min-width: 260px; max-width: 420px; border-left: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
+/* Jingyu: Evidence chat as collapsible right sidebar */
+.workspace-chat-panel { width: 320px; min-width: 200px; max-width: 420px; border-left: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; transition: width 0.2s; }
+.workspace-chat-panel.collapsed { width: 36px; min-width: 36px; }
+.workspace-chat-toggle { width: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-secondary); font-size: 14px; border-bottom: 1px solid var(--border); padding: 8px 0; flex-shrink: 0; }
+.workspace-chat-toggle:hover { color: var(--ink); background: var(--bg-sunken); }
 
 /* Video sidebar */
 .video-sidebar-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; transition: background 0.15s; }

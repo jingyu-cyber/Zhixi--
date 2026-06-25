@@ -60,6 +60,7 @@ export default function WorkspacePage() {
   const [batchMessage, setBatchMessage] = useState("");
   const [videoLoadError, setVideoLoadError] = useState("");
   const [compileError, setCompileError] = useState("");
+  const [chatCollapsed, setChatCollapsed] = useState(false);  // Jingyu: 右侧证据栏折叠
   const [expandedCourses, setExpandedCourses] = useState<Set<string>>(new Set());
   const [coursePages, setCoursePages] = useState<Record<string, VideoPageInfo[]>>({});
   const [loadingPages, setLoadingPages] = useState<Set<string>>(new Set());
@@ -696,9 +697,12 @@ export default function WorkspacePage() {
               </div>
             </div>
 
-            {/* Jingyu: Evidence chat — right sidebar panel */}
-            <div className="workspace-chat-panel">
-              <EvidenceChat bvid={selectedBvid} />
+            {/* Jingyu: Evidence chat — collapsible right sidebar */}
+            <div className={`workspace-chat-panel${chatCollapsed ? " collapsed" : ""}`}>
+              <div className="workspace-chat-toggle" onClick={() => setChatCollapsed(!chatCollapsed)} title={chatCollapsed ? "展开证据问答" : "收起证据问答"}>
+                {chatCollapsed ? "◀" : "▶"}
+              </div>
+              {!chatCollapsed && <EvidenceChat bvid={selectedBvid} />}
             </div>
           </div>
         </div>

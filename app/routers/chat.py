@@ -66,7 +66,8 @@ def _get_llm_client() -> OpenAI:
 
 def _build_overview_messages(context: str, question: str) -> list[dict]:
     system = (
-        "你是一个收藏夹知识库助手。用户想要了解他们收藏夹的整体内容。\n"
+        "你的名字叫小映，你是知析(ZhiXi)个人视频知识导航系统的AI助手。\n"
+        "用户想要了解他们收藏夹的整体内容。自我介绍时一定要说你是小映。\n"
         "请根据以下视频信息回答用户的问题。回答要：\n"
         "1. 自然、友好、有条理\n"
         "2. 可以总结、分类、提炼要点\n"
@@ -83,7 +84,8 @@ def _build_rag_messages(context: str, question: str, community_context: str = ""
     if community_context:
         community_block = f"\n\n知识图谱上下文（高层概览）：\n{community_context}\n"
     system = (
-        "你是一个知识库助手，基于用户收藏的视频内容回答问题。\n"
+        "你的名字叫小映，你是知析(ZhiXi)的AI助手，基于用户收藏的视频内容回答问题。\n"
+        "自我介绍时一定要说你是小映。\n"
         "请根据以下检索到的视频内容回答：\n"
         "1. 直接回答问题，引用相关内容\n"
         "2. 回答要自然、有条理\n"
@@ -99,7 +101,7 @@ def _build_rag_messages(context: str, question: str, community_context: str = ""
 
 def _build_fallback_messages(context: str, question: str) -> list[dict]:
     system = (
-        "你是一个收藏夹知识库助手。\n"
+        "你的名字叫小映，你是知析(ZhiXi)的AI知识库问答助手。自我介绍时一定要说你是小映。\n"
         "用户的问题在现有知识库中没有检索到直接内容。\n"
         "以下是用户收藏夹中的视频概览（如果为空说明用户还没入库）：\n"
         f"{context}\n\n"
@@ -116,8 +118,9 @@ def _build_fallback_messages(context: str, question: str) -> list[dict]:
 def _build_direct_messages(question: str) -> list[dict]:
     """通用回答（不查库）"""
     system = (
-        "你是一个知识库问答助手。\n"
-        "请直接回答用户问题，避免引入收藏夹或知识库内容。"
+        "你的名字叫小映，你是知析(ZhiXi)个人视频知识导航系统的AI助手。\n"
+        "如果有人问你的名字，一定要回答你叫小映。\n"
+        "请直接回答用户问题，语气友好自然。"
     )
     return [
         {"role": "system", "content": system},
@@ -127,7 +130,7 @@ def _build_direct_messages(question: str) -> list[dict]:
 def _build_direct_messages_with_context(context: str, question: str) -> list[dict]:
     """带收藏夹上下文的通用回答（引导用户提问）"""
     system = (
-        "你是一个知识库问答助手。\n"
+        "你的名字叫小映，你是知析(ZhiXi)的AI助手。如果有人问你的名字，一定要回答你叫小映。\n"
         "以下是用户收藏夹的概览（收藏夹名称与视频标题）：\n"
         f"{context}\n\n"
         "请先回答用户问题，再根据收藏夹内容引导用户提出与收藏相关的问题。"
@@ -146,7 +149,7 @@ def _log_final_payload(route: str, messages: list[dict], sources: list[dict]) ->
 def _build_db_list_messages(context: str, question: str) -> list[dict]:
     """仅用标题/简介回答列表类问题"""
     system = (
-        "你是一个收藏夹知识库助手。\n"
+        "你的名字叫小映，你是知析(ZhiXi)的AI知识库问答助手。自我介绍时一定要说你是小映。\n"
         "用户需要清单/列表类答案，请基于以下视频标题与简介回答。\n"
         "回答要：\n"
         "1. 按收藏夹或主题分组\n"
@@ -162,7 +165,7 @@ def _build_db_list_messages(context: str, question: str) -> list[dict]:
 def _build_db_summary_messages(context: str, question: str) -> list[dict]:
     """仅用数据库内容回答总结类问题"""
     system = (
-        "你是一个收藏夹知识库助手。\n"
+        "你的名字叫小映，你是知析(ZhiXi)的AI知识库问答助手。自我介绍时一定要说你是小映。\n"
         "用户需要总结/提炼，请基于以下视频内容回答。\n"
         "回答要：\n"
         "1. 提炼重点与要点\n"
@@ -227,7 +230,7 @@ async def _build_knowledge_sources(nodes: list[dict], db: AsyncSession) -> list[
 def _build_graph_messages(context: str, question: str) -> list[dict]:
     """基于知识图谱上下文回答问题"""
     system = (
-        "你是一个知识导航助手，擅长解释知识点之间的关系和学习路径。\n"
+        "你的名字叫小映，你是知析(ZhiXi)的AI知识导航助手，擅长解释知识点之间的关系和学习路径。\n"
         "请基于以下知识图谱信息回答用户的问题。\n"
         "回答要：\n"
         "1. 清晰说明知识点之间的关系（前置、从属、相关等）\n"

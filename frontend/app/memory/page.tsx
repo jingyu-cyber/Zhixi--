@@ -1,14 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import NavSidebar from "@/components/NavSidebar";
 import UserTopbar from "@/components/UserTopbar";
 import MemoryDashboard from "@/components/MemoryDashboard";
-import { useAuthSession } from "@/lib/session";
 
 export default function MemoryPage() {
-  const { sessionId } = useAuthSession();
-
   return (
     <div className="app-shell">
       <header className="app-topbar">
@@ -32,13 +28,7 @@ export default function MemoryPage() {
             <p style={{ color: "var(--text-secondary)", marginBottom: 24, fontSize: 14 }}>
               追踪你的知识点掌握情况，智能安排复习计划
             </p>
-            {sessionId ? (
-              <MemoryDashboard sessionId={sessionId} />
-            ) : (
-              <div style={{ textAlign: "center", padding: 60, color: "var(--text-tertiary)" }}>
-                <p>请先登录后查看记忆数据</p>
-              </div>
-            )}
+            <MemoryDashboard />
           </div>
         </div>
       </main>

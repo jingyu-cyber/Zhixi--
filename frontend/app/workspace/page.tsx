@@ -46,6 +46,7 @@ export default function WorkspacePage() {
   const { sessionId, scopeKey } = useAuthSession();
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [selectedBvid, setSelectedBvid] = useState<string | null>(null);
+  const [selectedCid, setSelectedCid] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("video");
   const [compileResult, setCompileResult] = useState<CompileResult | null>(null);
   const [compiling, setCompiling] = useState<string | null>(null);
@@ -97,6 +98,7 @@ export default function WorkspacePage() {
   useEffect(() => {
     setVideos([]);
     setSelectedBvid(null);
+    setSelectedCid(null);
     setCompileResult(null);
     setCompiling(null);
     setCompileProgress(0);
@@ -175,7 +177,7 @@ export default function WorkspacePage() {
   }, [sessionId, scopeKey]);
 
   // Fetch compile result when video selected
-  const fetchResult = useCallback(async (bvid: string, activeSessionId?: string | null) => {
+  const fetchResult = useCallback(async (bvid: string, pageCid?: number | null, activeSessionId?: string | null) => {
     const sid = activeSessionId || sessionId;
     if (!sid) {
       setCompileResult(null);
@@ -185,7 +187,7 @@ export default function WorkspacePage() {
     const requestId = ++resultRequestIdRef.current;
     setLoadingResult(true);
     try {
-      const result = await compileApi.getResult(bvid);
+      const result = await compileApi.getResult(bvid, pageCid ?? undefined);
       if (resultRequestIdRef.current === requestId && isActiveSession(sid)) {
         setCompileResult(result);
       }
@@ -199,10 +201,11 @@ export default function WorkspacePage() {
     }
   }, [sessionId]);
 
-  const handleSelectVideo = (bvid: string) => {
+  const handleSelectVideo = (bvid: string, pageCid?: number | null) => {
     setSelectedBvid(bvid);
+    setSelectedCid(pageCid ?? null);
     setCompileResult(null);
-    void fetchResult(bvid, sessionId);
+    void fetchResult(bvid, pageCid, sessionId);
   };
 
   // Compile video (supports per-page cid)
@@ -240,7 +243,7 @@ export default function WorkspacePage() {
             // 清理 localStorage 中的编译任务
             try { localStorage.removeItem(`bilimind_compile_${bvid}`); } catch {}
             if (selectedBvid === bvid) {
-              void fetchResult(bvid, activeSessionId);
+              void fetchResult(bvid, cid, activeSessionId);
             }
           } else if (status.status === "failed") {
             setCompiling(null);
@@ -506,8 +509,8 @@ export default function WorkspacePage() {
                               return (
                                 <div key={pageKey} className="course-page-item">
                                   <div
-                                    className={`video-sidebar-item video-sidebar-child ${selectedBvid === v.bvid ? "selected" : ""}`}
-                                    onClick={() => handleSelectVideo(v.bvid)}
+                                    className={`video-sidebar-item video-sidebar-child ${selectedBvid === v.bvid && selectedCid === page.cid ? "selected" : ""}`}
+                                    onClick={() => handleSelectVideo(v.bvid, page.cid)}
                                   >
                                     <div className="video-sidebar-title">
                                       <span className="video-episode-badge">

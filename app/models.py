@@ -128,6 +128,7 @@ class Segment(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     video_bvid = Column(String(20), index=True, nullable=False)
+    page_cid = Column(Integer, nullable=True, index=True)  # 分P标识，null=完整视频
     segment_index = Column(Integer, nullable=False)
     start_time = Column(Float, nullable=True)   # 开始时间(秒)
     end_time = Column(Float, nullable=True)     # 结束时间(秒)
@@ -255,6 +256,7 @@ class Claim(Base):
     session_id = Column(String(64), index=True, nullable=True)
     owner_mid = Column(Integer, index=True, nullable=True)  # 数据归属(B站用户ID)
     concept_id = Column(Integer, index=True, nullable=False)  # FK → Concept
+    page_cid = Column(Integer, nullable=True, index=True)  # 分P标识，null=完整视频
     statement = Column(Text, nullable=False)  # 论断文本
     claim_type = Column(String(30), default='explanation')  # definition/explanation/example/comparison/warning
     confidence = Column(Float, default=0.5)

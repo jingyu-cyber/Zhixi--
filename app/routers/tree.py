@@ -22,11 +22,10 @@ router = APIRouter(prefix="/tree", tags=["知识树"])
 
 
 async def _load_graph_store(db: AsyncSession, session_id: Optional[str] = None) -> GraphStore:
-    """为当前请求加载隔离后的图谱快照（按 owner_mid 过滤，演示/未登录用户查看全部）"""
-    owner_mid = None  # SHARED
+    """为当前请求加载隔离后的图谱快照（按 owner_mid 过滤）"""
+    owner_mid = await _resolve_owner_mid(db, session_id)
     gs = GraphStore(graph_path=settings.graph_persist_path)
-    # 有 owner_mid 的真实用户按 owner 隔离；演示/未登录用户 (owner_mid=None) 不受限查看全部数据
-    await gs.load_from_db(db, session_id=None, owner_mid=None)
+    await gs.load_from_db(db, session_id=None, owner_mid=owner_mid)
     return gs
 
 
@@ -202,7 +201,7 @@ async def get_topics(
 ):
     """获取一级主题列表（去重）"""
     try:
-        owner_mid = None  # SHARED
+        owner_mid = await _resolve_owner_mid(db, session_id)
         # 使用子查询去重：取每个 normalized_name 中 source_count 最高的节点
         from sqlalchemy import and_
         subq = (
@@ -247,7 +246,7 @@ async def get_node_detail(
     db: AsyncSession = Depends(get_db),
 ):
     """获取知识节点详情"""
-    owner_mid = None  # SHARED
+    owner_mid = await _resolve_owner_mid(db, session_id)
     node_query = select(KnowledgeNode).where(KnowledgeNode.id == node_id)
     if owner_mid is not None:
         node_query = node_query.where(KnowledgeNode.owner_mid == owner_mid)
@@ -408,7 +407,7 @@ async def get_video_detail(
     db: AsyncSession = Depends(get_db),
 ):
     """获取视频详情（知识点 + 时间片段 + 树中位置）"""
-    owner_mid = None  # SHARED
+    owner_mid = await _resolve_owner_mid(db, session_id)
     result = await db.execute(select(VideoCache).where(VideoCache.bvid == bvid))
     video = result.scalar_one_or_none()
     if not video:
@@ -504,7 +503,7 @@ async def get_node_segments(
     db: AsyncSession = Depends(get_db),
 ):
     """获取节点关联的所有片段"""
-    owner_mid = None  # SHARED
+    owner_mid = await _resolve_owner_mid(db, session_id)
     links_query = select(NodeSegmentLink).where(NodeSegmentLink.node_id == node_id)
     if owner_mid is not None:
         links_query = links_query.where(NodeSegmentLink.owner_mid == owner_mid)
@@ -546,7 +545,7 @@ async def get_learning_path(
     db: AsyncSession = Depends(get_db),
 ):
     """生成学习路径推荐"""
-    owner_mid = None  # SHARED
+    owner_mid = await _resolve_owner_mid(db, session_id)
     gs = await _load_graph_store(db, session_id=session_id)
 
     if not gs.has_node(node_id):
@@ -647,7 +646,7 @@ async def get_tree_stats(
     db: AsyncSession = Depends(get_db),
 ):
     """获取知识树统计"""
-    owner_mid = None  # SHARED
+    owner_mid = await _resolve_owner_mid(db, session_id)
     if owner_mid is not None:
         node_count = await db.scalar(select(func.count()).select_from(KnowledgeNode).where(KnowledgeNode.owner_mid == owner_mid))
         edge_count = await db.scalar(select(func.count()).select_from(KnowledgeEdge).where(KnowledgeEdge.owner_mid == owner_mid))
@@ -755,7 +754,7 @@ async def get_pending_nodes(
     db: AsyncSession = Depends(get_db),
 ):
     """获取待审核节点列表"""
-    owner_mid = None  # SHARED
+    owner_mid = await _resolve_owner_mid(db, session_id)
     query = select(KnowledgeNode).where(KnowledgeNode.review_status == "pending_review")
     if owner_mid is not None:
         query = query.where(KnowledgeNode.owner_mid == owner_mid)
@@ -787,7 +786,7 @@ async def review_node(
     if action not in ("approve", "reject"):
         raise HTTPException(status_code=400, detail="action 必须为 approve 或 reject")
 
-    owner_mid = None  # SHARED
+    owner_mid = await _resolve_owner_mid(db, session_id)
     query = select(KnowledgeNode).where(KnowledgeNode.id == node_id)
     if owner_mid is not None:
         query = query.where(KnowledgeNode.owner_mid == owner_mid)
@@ -806,7 +805,7 @@ async def review_node(
 
 async def _fill_video_counts(tree_nodes: list[dict], db: AsyncSession, session_id: Optional[str] = None) -> None:
     """递归填充树节点的 video_count"""
-    owner_mid = None  # SHARED
+    owner_mid = await _resolve_owner_mid(db, session_id)
     for node in tree_nodes:
         node_id = node.get("id")
         if node_id and node_id > 0:

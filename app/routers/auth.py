@@ -10,6 +10,7 @@ from sqlalchemy import select
 from app.database import get_db, get_db_context
 from app.models import QRCodeResponse, LoginStatusResponse, UserSession as UserSessionModel
 from app.services.bilibili import BilibiliService
+from datetime import datetime
 import uuid
 
 router = APIRouter(prefix="/auth", tags=["认证"])
@@ -225,25 +226,36 @@ async def logout(session_id: str):
 @router.post("/demo")
 async def login_as_demo(db: AsyncSession = Depends(get_db)):
     """
-    演示账号登录 — 无需B站扫码，直接创建预置数据的演示会话
+    演示账号登录 — 无需B站扫码，使用固定演示会话
 
     返回 session_id 和演示用户信息
     """
-    import time
-    session_id = f"demo_{int(time.time() * 1000)}"
+    # 使用固定 session_id，确保演示数据（收藏夹/视频）不会丢失
+    session_id = "demo_session"
 
-    db_session = UserSessionModel(
-        session_id=session_id,
-        bili_mid=0,
-        bili_uname="演示用户",
-        bili_face="",
-        sessdata="",
-        bili_jct="",
-        dedeuserid="0",
-        is_valid=True
+    # 检查是否已存在演示会话
+    result = await db.execute(
+        select(UserSessionModel).where(UserSessionModel.session_id == session_id)
     )
-    db.add(db_session)
-    await db.commit()
+    existing = result.scalars().first()
+
+    if existing:
+        existing.is_valid = True
+        existing.last_active_at = datetime.utcnow()
+        await db.commit()
+    else:
+        db_session = UserSessionModel(
+            session_id=session_id,
+            bili_mid=0,
+            bili_uname="演示用户",
+            bili_face="",
+            sessdata="",
+            bili_jct="",
+            dedeuserid="0",
+            is_valid=True
+        )
+        db.add(db_session)
+        await db.commit()
 
     # 缓存到内存
     login_sessions[session_id] = {

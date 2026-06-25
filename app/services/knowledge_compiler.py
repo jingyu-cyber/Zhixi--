@@ -559,7 +559,7 @@ async def compile_video(
     result = await db.execute(
         select(VideoCache).where(VideoCache.bvid == bvid)
     )
-    video_cache = result.scalar_one_or_none()
+    video_cache = result.scalars().first()
 
     # 如果 VideoCache 不存在，从 B站 API 获取视频信息并创建
     if not video_cache:
@@ -611,22 +611,29 @@ async def compile_video(
 
     logger.info(f"[{bvid}] 获取到 {len(segments_data)} 个片段")
 
-    # 清除此视频的旧编译数据
+    # 清除此视频的旧编译数据（按 bvid + page_cid 精确清理）
     from sqlalchemy import delete as sql_delete
-    # 1. 找到此视频所有旧 claims 关联的 concept_id
+
+    # 1. 找到此视频此分集旧 claims 关联的 concept_id
+    claim_filter = [Claim.video_bvid == bvid]
+    if is_page:
+        claim_filter.append(Claim.page_cid == page_cid)
     old_claims_result = await db.execute(
-        select(Claim.concept_id).where(Claim.video_bvid == bvid)
+        select(Claim.concept_id).where(*claim_filter)
     )
     old_concept_ids = set(row[0] for row in old_claims_result.fetchall() if row[0])
 
-    # 2. 删除此视频的所有旧 claims
+    # 2. 删除此视频此分集的所有旧 claims
     await db.execute(
-        sql_delete(Claim).where(Claim.video_bvid == bvid)
+        sql_delete(Claim).where(*claim_filter)
     )
 
-    # 3. 删除此视频的旧 segments
+    # 3. 删除此视频此分集的旧 segments
+    seg_filter = [Segment.video_bvid == bvid]
+    if is_page:
+        seg_filter.append(Segment.page_cid == page_cid)
     await db.execute(
-        sql_delete(Segment).where(Segment.video_bvid == bvid)
+        sql_delete(Segment).where(*seg_filter)
     )
 
     # 4. 删除没有其他 claim 的孤儿概念
@@ -652,6 +659,7 @@ async def compile_video(
     for seg in segments_data:
         record = Segment(
             video_bvid=bvid,
+            page_cid=page_cid,
             segment_index=seg["segment_index"],
             start_time=seg.get("start_time"),
             end_time=seg.get("end_time"),
@@ -713,7 +721,7 @@ async def compile_video(
                 Concept.owner_mid == owner_mid,
             )
         )
-        concept_row = existing.scalar_one_or_none()
+        concept_row = existing.scalars().first()
 
         if concept_row:
             # 更新已有概念
@@ -751,6 +759,7 @@ async def compile_video(
                 session_id=session_id,
                 owner_mid=owner_mid,
                 concept_id=concept_row.id,
+                page_cid=page_cid,
                 statement=cl["statement"],
                 claim_type=cl["type"],
                 confidence=cl["confidence"],
@@ -826,7 +835,7 @@ async def compile_video(
                 KnowledgeNode.owner_mid == owner_mid,
             )
         )
-        kn = existing_node.scalar_one_or_none()
+        kn = existing_node.scalars().first()
         if kn:
             # 更新已有节点
             kn.source_count = max(kn.source_count or 1, cdata["source_count"])
@@ -860,7 +869,7 @@ async def compile_video(
                         KnowledgeNode.owner_mid == owner_mid,
                     )
                 )
-                title_kn = title_node.scalar_one_or_none()
+                title_kn = title_node.scalars().first()
                 if title_kn and title_kn.id != kn.id:
                     # 检查是否已有此边
                     existing_edge = await db.execute(
@@ -870,7 +879,7 @@ async def compile_video(
                             KnowledgeEdge.relation_type == "related_to",
                         )
                     )
-                    if not existing_edge.scalar_one_or_none():
+                    if not existing_edge.scalars().first():
                         edge = KnowledgeEdge(
                             source_node_id=kn.id,
                             target_node_id=title_kn.id,
@@ -931,9 +940,11 @@ async def compile_video(
                 KNodeModel.owner_mid == owner_mid,
             )
         )
-        kn_row = kn_result.scalar_one_or_none()
+        kn_row = kn_result.scalars().first()
         if kn_row:
             kn_id = kn_row.id
+        if kn_id is None:
+            kn_id = -1  # sentinel for unknown knowledge_node
 
         # 收集证据
         evidences = []
@@ -963,7 +974,7 @@ async def compile_video(
                 MemoryNode.owner_mid == owner_mid,
             )
         )
-        mem = existing_mem.scalar_one_or_none()
+        mem = existing_mem.scalars().first()
 
         if mem:
             mem.source_count = max(mem.source_count or 1, cdata["source_count"])
@@ -1020,8 +1031,8 @@ async def compile_video(
                 MemoryNode.owner_mid == owner_mid,
             )
         )
-        src_m = src_mem.scalar_one_or_none()
-        tgt_m = tgt_mem.scalar_one_or_none()
+        src_m = src_mem.scalars().first()
+        tgt_m = tgt_mem.scalars().first()
         if src_m and tgt_m and src_m.id != tgt_m.id:
             from sqlalchemy import select as sa_select
             existing_me = await db.execute(
@@ -1031,7 +1042,7 @@ async def compile_video(
                     MemoryEdge.relation_type == "prerequisite_of",
                 )
             )
-            if not existing_me.scalar_one_or_none():
+            if not existing_me.scalars().first():
                 me = MemoryEdge(
                     source_id=src_m.id,
                     target_id=tgt_m.id,

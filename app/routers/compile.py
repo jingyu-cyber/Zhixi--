@@ -119,11 +119,18 @@ async def get_video_pages(
     if not session:
         raise HTTPException(status_code=401, detail="未登录或会话已过期")
     cookies = session.get("cookies", {})
-    bili = BilibiliService(
-        sessdata=cookies.get("SESSDATA"),
-        bili_jct=cookies.get("bili_jct"),
-        dedeuserid=cookies.get("DedeUserID"),
-    )
+    user_info = session.get("user_info", {})
+    mid = int(user_info.get("mid") or cookies.get("DedeUserID") or 0)
+
+    # 演示用户：使用无cookie的公开API获取视频分页信息
+    if mid == 0:
+        bili = BilibiliService()
+    else:
+        bili = BilibiliService(
+            sessdata=cookies.get("SESSDATA"),
+            bili_jct=cookies.get("bili_jct"),
+            dedeuserid=cookies.get("DedeUserID"),
+        )
     try:
         video_info = await bili.get_video_info(bvid)
         if not video_info:
@@ -223,7 +230,7 @@ async def _compile_video_task(
                 vc_result = await db.execute(
                     select(VideoCache).where(VideoCache.bvid == bvid)
                 )
-                video_cache = vc_result.scalar_one_or_none()
+                video_cache = vc_result.scalars().first()
 
                 # 如果 VideoCache 还未缓存，从 B站 API 获取视频信息预填充
                 if not video_cache or not video_cache.duration:
@@ -372,20 +379,24 @@ async def stream_compile_status(
 async def get_compile_result(
     bvid: str,
     session_id: str = Query(..., description="会话ID"),
+    page_cid: Optional[int] = Query(None, description="分P cid，用于分集结果过滤"),
     db: AsyncSession = Depends(get_db),
 ):
     """
     获取视频的完整编译结果
 
     返回 Concept-Claim-Evidence 结构 + 时间轴密度 + 前置关系
+    page_cid 可选，用于分集编译时只返回该分集的结果
     """
     owner_mid = await _resolve_owner_mid(db, session_id) if session_id else None
+    is_page = bool(page_cid)
+
     # 获取视频信息
     vc_query = select(VideoCache).where(VideoCache.bvid == bvid)
     if owner_mid is not None:
         vc_query = vc_query.where(VideoCache.owner_mid == owner_mid)
     vc_result = await db.execute(vc_query)
-    video_cache = vc_result.scalar_one_or_none()
+    video_cache = vc_result.scalars().first()
 
     # 如果 VideoCache 不存在，视频未编译 → 返回 404
     if not video_cache:
@@ -394,19 +405,30 @@ async def get_compile_result(
     video_title = video_cache.title or "未知标题"
     video_duration = video_cache.duration
 
-    # 获取 Concepts
+    # 获取 Concepts（全局共享，不过滤 page_cid）
     concept_query = select(Concept)
     if owner_mid is not None:
         concept_query = concept_query.where(Concept.owner_mid == owner_mid)
     concept_rows = await db.execute(concept_query)
     all_concepts = concept_rows.scalars().all()
 
-    # 获取与此视频关联的 Claims
+    # 获取与此视频关联的 Claims（按 page_cid 过滤）
+    # 如果按 page_cid 查不到数据，说明数据是整集编译的（page_cid=NULL），回退显示全部
     claim_query = select(Claim).where(Claim.video_bvid == bvid)
     if owner_mid is not None:
         claim_query = claim_query.where(Claim.owner_mid == owner_mid)
-    claim_rows = await db.execute(claim_query)
-    all_claims = claim_rows.scalars().all()
+    if is_page:
+        page_claim_query = claim_query.where(Claim.page_cid == page_cid)
+        page_result = await db.execute(page_claim_query)
+        page_claims = page_result.scalars().all()
+        if page_claims:
+            all_claims = page_claims
+        else:
+            # 子视频无独立编译数据，回退显示整集数据
+            all_claims = (await db.execute(claim_query)).scalars().all()
+    else:
+        claim_rows = await db.execute(claim_query)
+        all_claims = claim_rows.scalars().all()
 
     # 建立 concept_id -> claims 映射
     concept_id_to_claims: dict[int, list] = {}
@@ -447,8 +469,10 @@ async def get_compile_result(
             "claims": claims_response,
         })
 
-    # 获取 Segments（时间轴）
+    # 获取 Segments（按 page_cid 过滤）
     seg_query = select(Segment).where(Segment.video_bvid == bvid)
+    if is_page:
+        seg_query = seg_query.where(Segment.page_cid == page_cid)
     if owner_mid is not None:
         seg_query = seg_query.where(Segment.owner_mid == owner_mid)
     seg_rows = await db.execute(seg_query.order_by(Segment.segment_index))
@@ -478,7 +502,7 @@ async def get_compile_result(
             entry["concepts"] = seg_concept_names
         timeline.append(entry)
 
-    # 获取 ConceptRelations
+    # 获取 ConceptRelations（只返回当前视频相关的前置关系）
     rel_query = select(ConceptRelation)
     if owner_mid is not None:
         rel_query = rel_query.where(ConceptRelation.owner_mid == owner_mid)

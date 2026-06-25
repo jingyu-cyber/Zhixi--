@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { treeApi, GraphData, GraphNode } from "@/lib/api";
 import { isActiveSession } from "@/lib/session";
+import { useTheme } from "@/components/ThemeProvider";
 import dynamic from "next/dynamic";
 import * as THREE from "three";
 
@@ -87,6 +88,9 @@ export default function KnowledgeGraph3D({
   highlightPath,
   colorMode = "type",
 }: KnowledgeGraph3DProps) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+
   const [data, setData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(true);
   const fgRef = useRef<any>(null);
@@ -247,16 +251,20 @@ export default function KnowledgeGraph3D({
 
   // ==================== 连线样式 ====================
 
+  // 连线颜色：跟随主题
+  const linkDimColor = isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.06)";
+  const linkPathDimColor = isDark ? "rgba(255, 255, 255, 0.02)" : "rgba(0, 0, 0, 0.02)";
+
   const linkColor = useCallback(
     (link: any) => {
       if (hasPath) {
         const srcId = typeof link.source === "object" ? link.source.id : link.source;
         const tgtId = typeof link.target === "object" ? link.target.id : link.target;
-        return pathEdges.has(`${srcId}-${tgtId}`) ? "rgba(251, 191, 36, 0.6)" : "rgba(255, 255, 255, 0.02)";
+        return pathEdges.has(`${srcId}-${tgtId}`) ? "rgba(251, 191, 36, 0.6)" : linkPathDimColor;
       }
-      return "rgba(255, 255, 255, 0.08)";
+      return linkDimColor;
     },
-    [hasPath, pathEdges]
+    [hasPath, pathEdges, linkDimColor, linkPathDimColor]
   );
 
   const linkWidth = useCallback(
@@ -271,15 +279,27 @@ export default function KnowledgeGraph3D({
     [hasPath, pathEdges]
   );
 
-  // 节点标签：只显示名称
+  // 节点标签：根据主题切换颜色
+  const labelBg = isDark
+    ? "rgba(0,0,0,0.85)"
+    : "rgba(255,255,255,0.92)";
+  const labelText = isDark ? "#e5e7eb" : "#1f2937";
+  const labelSubtext = isDark ? "#9ca3af" : "#6b7280";
+  const labelDim = isDark ? "#b8c4d4" : "#4b5563";
+  const labelBorder = isDark
+    ? "rgba(52,211,153,0.2)"
+    : "rgba(52,211,153,0.35)";
+
   const nodeLabel = useCallback(
-    (node: any) =>
-      `<div style="background:rgba(0,0,0,0.8);padding:6px 12px;border-radius:8px;font-size:13px;color:#e5e7eb;border:1px solid rgba(52,211,153,0.2);backdrop-filter:blur(8px)">
-        <b style="color:${NODE_COLORS[node.node_type] || '#fff'}">${node.name}</b>
-        <br/><span style="color:#9ca3af;font-size:11px">${node.node_type} · ${"●".repeat(node.difficulty)}</span>
-        ${node.definition ? `<br/><span style="color:#6b7280;font-size:10px">${node.definition.slice(0, 60)}</span>` : ""}
-      </div>`,
-    []
+    (node: any) => {
+      const typeColor = NODE_COLORS[node.node_type] || (isDark ? "#fff" : "#111827");
+      return `<div style="background:${labelBg};padding:6px 12px;border-radius:8px;font-size:13px;color:${labelText};border:1px solid ${labelBorder};backdrop-filter:blur(8px);box-shadow:0 2px 8px ${isDark ? "rgba(0,0,0,0.4)" : "rgba(0,0,0,0.12)"}">
+        <b style="color:${typeColor}">${node.name}</b>
+        <br/><span style="color:${labelSubtext};font-size:11px">${node.node_type} · ${"●".repeat(node.difficulty)}</span>
+        ${node.definition ? `<br/><span style="color:${labelDim};font-size:10px">${node.definition.slice(0, 60)}</span>` : ""}
+      </div>`;
+    },
+    [labelBg, labelText, labelSubtext, labelDim, labelBorder, isDark]
   );
 
   // ==================== 力导向居中 ====================
@@ -421,7 +441,7 @@ export default function KnowledgeGraph3D({
         linkDirectionalParticleSpeed={0.005}
         linkDirectionalParticleColor={() => "#fbbf24"}
         onNodeClick={handleNodeClick}
-        backgroundColor="#000000"
+        backgroundColor={isDark ? "#0a0a0f" : "#f8fafc"}
         showNavInfo={false}
         warmupTicks={80}
         cooldownTicks={200}

@@ -913,10 +913,11 @@ export const compileApi = {
     if (sid) params.set("session_id", sid);
     return request<{ status: string; progress: number; message: string }>(`/compile/status/${taskId}?${params.toString()}`);
   },
-  getResult: (bvid: string) => {
+  getResult: (bvid: string, pageCid?: number) => {
     const params = new URLSearchParams();
     const sid = getSessionId();
     if (sid) params.set("session_id", sid);
+    if (pageCid != null) params.set("page_cid", String(pageCid));
     return request<CompileResult>(`/compile/result/${bvid}?${params.toString()}`);
   },
 };

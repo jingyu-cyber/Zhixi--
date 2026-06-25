@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
-from app.models import FavoriteFolderInfo, VideoCache, Segment
+from app.models import FavoriteFolderInfo, FavoriteFolder, FavoriteVideo, VideoCache, Segment
 from app.services.bilibili import BilibiliService
 from app.routers.auth import get_session
 from app.utils import resolve_owner_mid as _resolve_owner_mid
@@ -104,10 +104,28 @@ async def get_favorites_list(session_id: str = Query(..., description="会话ID"
     cookies = session.get("cookies", {})
     user_info = session.get("user_info", {})
 
-    # 演示账号（mid=0）没有 B站 数据，直接返回空列表
+    # 演示账号（mid=0）：从本地数据库读取收藏夹，不从 B站 API 拉取
     mid = int(user_info.get("mid") or cookies.get("DedeUserID") or 0)
     if mid == 0:
-        return []
+        from app.database import get_db_context
+        async with get_db_context() as db:
+            result = await db.execute(
+                select(FavoriteFolder).where(
+                    FavoriteFolder.session_id == session_id,
+                    FavoriteFolder.is_selected == True,
+                )
+            )
+            folders = result.scalars().all()
+            return [
+                FavoriteFolderInfo(
+                    media_id=f.media_id,
+                    title=f.title,
+                    media_count=f.media_count or 0,
+                    is_selected=f.is_selected if f.is_selected is not None else True,
+                    is_default=True,
+                )
+                for f in folders
+            ]
 
     try:
         bili = BilibiliService(
@@ -149,9 +167,47 @@ async def get_favorite_videos(
     session = await get_session(session_id)
     if not session:
         raise HTTPException(status_code=401, detail="未登录或会话已过期")
-    
+
     cookies = session.get("cookies", {})
-    
+    user_info = session.get("user_info", {})
+    mid = int(user_info.get("mid") or cookies.get("DedeUserID") or 0)
+
+    # 演示用户：从本地数据库返回视频列表
+    if mid == 0:
+        from app.database import get_db_context
+        from app.models import FavoriteVideo
+        async with get_db_context() as db:
+            # Find demo folder(s) for this session
+            folder_ids_result = await db.execute(
+                select(FavoriteFolder.id).where(FavoriteFolder.session_id == session_id)
+            )
+            folder_ids = [row[0] for row in folder_ids_result.fetchall()]
+            if not folder_ids:
+                return {"videos": [], "has_more": False, "total": 0}
+            bvids_result = await db.execute(
+                select(FavoriteVideo.bvid).where(FavoriteVideo.folder_id.in_(folder_ids))
+            )
+            bvids = [row[0] for row in bvids_result.fetchall()]
+            if not bvids:
+                return {"videos": [], "has_more": False, "total": 0}
+            vc_result = await db.execute(
+                select(VideoCache).where(VideoCache.bvid.in_(bvids))
+            )
+            videos = []
+            for vc in vc_result.scalars().all():
+                is_course = (vc.content_category or "single_video") == "course"
+                videos.append({
+                    "bvid": vc.bvid,
+                    "title": vc.title,
+                    "duration": vc.duration,
+                    "owner": vc.owner_name or "",
+                    "content_category": vc.content_category or "single_video",
+                    "series_name": vc.series_name,
+                    "series_key": vc.series_key,
+                    "pages_count": 2 if is_course else 1,
+                })
+            return {"videos": videos, "has_more": False, "total": len(videos)}
+
     try:
         bili = BilibiliService(
             sessdata=cookies.get("SESSDATA"),

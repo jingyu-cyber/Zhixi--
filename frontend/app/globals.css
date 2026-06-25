@@ -3812,7 +3812,7 @@ a { color: inherit; text-decoration: none; }
 .video-episode-badge { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: var(--bg-sunken); color: var(--text-secondary); margin-right: 4px; font-weight: 500; }
 
 /* Timeline */
-.timeline-container { position: relative; margin-bottom: 24px; }
+.timeline-container { position: relative; margin-bottom: 24px; width: 100%; }
 .timeline-bar { position: relative; height: 40px; background: var(--bg-sunken); border-radius: 6px; overflow: hidden; }
 .timeline-segment { position: absolute; top: 0; height: 100%; background: var(--primary); cursor: pointer; transition: opacity 0.2s; }
 .timeline-segment.peak { background: #f59e0b; }

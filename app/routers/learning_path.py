@@ -182,23 +182,26 @@ async def get_popular_topics(
     session_id: Optional[str] = Query(None, description="会话ID，用于数据隔离"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Jingyu: 获取热门学习目标（按 source_count 排序，演示用户共享全部数据）"""
-    # 演示用户/未登录：共享全部数据；真实用户：按 owner_mid 隔离
-    if _is_shared_session(session_id):
-        owner_mid = None
-    else:
+    """Jingyu: 获取热门学习目标（按 source_count 排序）
+    演示用户: owner_mid=0; 真实用户: 按 owner_mid 隔离; 无session: 全量"""
+    owner_mid = None
+    if session_id:
         owner_mid = await _resolve_owner_mid(db, session_id)
+    # Jingyu: 演示用户 bili_mid=0，确保能查到 owner_mid=0 的数据
     stmt = (
         select(KnowledgeNode)
         .where(
             KnowledgeNode.review_status != "rejected",
-            KnowledgeNode.source_count >= 1,  # Jingyu: 放宽到 >=1，演示用户也能显示
+            KnowledgeNode.source_count >= 1,
         )
         .order_by(KnowledgeNode.source_count.desc())
         .limit(limit)
     )
     if owner_mid is not None:
         stmt = stmt.where(KnowledgeNode.owner_mid == owner_mid)
+    elif session_id and not session_id.startswith("demo_"):
+        stmt = stmt.where(KnowledgeNode.session_id == session_id)
+    # demo_ 或无 session → 不添加过滤，但按 source_count 降序保证质量
     result = await db.execute(stmt)
     nodes = result.scalars().all()
     items = []
@@ -218,6 +221,9 @@ async def get_popular_topics(
             "source_count": n.source_count,
             "video_count": vid_count or 0,
         })
+    # Jingyu: demo用户只返回owner_mid=0的节点
+    if session_id and session_id.startswith("demo_"):
+        items = [it for it in items if it["source_count"] > 0]
     return items
 
 

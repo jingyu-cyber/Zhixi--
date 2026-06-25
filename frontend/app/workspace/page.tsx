@@ -56,7 +56,7 @@ export default function WorkspacePage() {
   const [batchBuilding, setBatchBuilding] = useState(false);
   const [batchTaskId, setBatchTaskId] = useState<string | null>(null);
   const [batchProgress, setBatchProgress] = useState(0);
-  const [chatCollapsed, setChatCollapsed] = useState(false);
+  const [chatCollapsed, setChatCollapsed] = useState(true);  // Jingyu: 默认折叠右侧证据栏，给知识图更大空间
   const [batchMessage, setBatchMessage] = useState("");
   const [videoLoadError, setVideoLoadError] = useState("");
   const [compileError, setCompileError] = useState("");
@@ -699,7 +699,8 @@ export default function WorkspacePage() {
             {/* Jingyu: Evidence chat — collapsible right sidebar */}
             <div className={`workspace-chat-panel${chatCollapsed ? " collapsed" : ""}`}>
               <div className="workspace-chat-toggle" onClick={() => setChatCollapsed(!chatCollapsed)} title={chatCollapsed ? "展开证据问答" : "收起证据问答"}>
-                {chatCollapsed ? "◀" : "▶"}
+                {chatCollapsed ? "▶" : "◀"}
+                {chatCollapsed && <span style={{ writingMode: "vertical-rl", fontSize: 11, marginTop: 8 }}>证据问答</span>}
               </div>
               {!chatCollapsed && <EvidenceChat bvid={selectedBvid} />}
             </div>

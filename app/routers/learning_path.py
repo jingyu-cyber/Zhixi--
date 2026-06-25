@@ -181,17 +181,20 @@ async def get_popular_topics(
     session_id: Optional[str] = Query(None, description="会话ID，用于数据隔离"),
     db: AsyncSession = Depends(get_db),
 ):
-    """获取热门学习目标（按 source_count 排序）"""
+    """Jingyu: 获取热门学习目标（按 source_count 排序，兼容演示用户 source_count=1）"""
+    owner_mid = await _resolve_owner_mid(db, session_id)
     stmt = (
         select(KnowledgeNode)
         .where(
             KnowledgeNode.review_status != "rejected",
-            KnowledgeNode.source_count >= 2,
+            KnowledgeNode.source_count >= 1,  # Jingyu: 放宽到 >=1，演示用户也能显示
         )
         .order_by(KnowledgeNode.source_count.desc())
         .limit(limit)
     )
-    if session_id:
+    if owner_mid is not None:
+        stmt = stmt.where(KnowledgeNode.owner_mid == owner_mid)
+    elif session_id and not session_id.startswith("demo_"):
         stmt = stmt.where(KnowledgeNode.session_id == session_id)
     result = await db.execute(stmt)
     nodes = result.scalars().all()
@@ -200,8 +203,8 @@ async def get_popular_topics(
         vid_stmt = select(func.count(func.distinct(NodeSegmentLink.video_bvid))).where(
             NodeSegmentLink.node_id == n.id
         )
-        if session_id:
-            vid_stmt = vid_stmt.where(NodeSegmentLink.session_id == session_id)
+        if owner_mid is not None:
+            vid_stmt = vid_stmt.where(NodeSegmentLink.owner_mid == owner_mid)
         vid_count = await db.scalar(vid_stmt)
         items.append({
             "id": n.id,

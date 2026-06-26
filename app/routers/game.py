@@ -63,34 +63,58 @@ async def get_challenge(
     session_id: Optional[str] = Query(None, description="会话ID"),
     db: AsyncSession = Depends(get_db),
 ):
-    """随机生成一道知识关系预测题"""
+    """随机生成一道知识关系预测题：50%有关系的概念对 + 50%无关系的概念对"""
     if not session_id:
         raise HTTPException(status_code=400, detail="需要提供 session_id")
 
     graph = await _get_session_graph(db, session_id)
     edges = list(graph.graph.edges(data=True))
+    nodes = list(graph.graph.nodes(data=True))
 
-    if not edges:
-        return {
-            "empty": True,
-            "message": "知识图谱中没有边，无法生成题目",
-            "node_a": None,
-            "node_b": None,
-            "options": [],
-        }
+    if len(nodes) < 2:
+        return {"empty": True, "message": "知识图谱中节点不足", "node_a": None, "node_b": None, "options": []}
 
-    # 随机选一条边
-    src, tgt, data = random.choice(edges)
-    correct_relation = data.get("relation_type", "related_to")
+    # 50% 概率：挑选无关系的两个概念（正确答案为"无关系"）
+    if random.random() < 0.5 and len(nodes) >= 2:
+        # 随机选两个不同的节点
+        a_idx, b_idx = random.sample(range(len(nodes)), 2)
+        src, src_data = nodes[a_idx]
+        tgt, tgt_data = nodes[b_idx]
+        # 检查是否真的没有边
+        if graph.graph.has_edge(src, tgt) or graph.graph.has_edge(tgt, src):
+            # 有边就fallback到有用边
+            if edges:
+                src, tgt, data = random.choice(edges)
+                correct_relation = data.get("relation_type", "related_to")
+                src_data = graph.get_node(src) or {}
+                tgt_data = graph.get_node(tgt) or {}
+            else:
+                src, tgt = src, tgt  # keep the random pair
+                correct_relation = "无关系"
+                src_data = src_data or {}
+                tgt_data = tgt_data or {}
+        else:
+            correct_relation = "无关系"
+    elif edges:
+        # 随机选一条有关系的边
+        src, tgt, data = random.choice(edges)
+        correct_relation = data.get("relation_type", "related_to")
+        src_data = graph.get_node(src) or {}
+        tgt_data = graph.get_node(tgt) or {}
+    else:
+        # 没有边，随机两个节点
+        a_idx, b_idx = random.sample(range(len(nodes)), 2)
+        src, src_data = nodes[a_idx]
+        tgt, tgt_data = nodes[b_idx]
+        correct_relation = "无关系"
 
-    # 获取节点信息
-    src_data = graph.get_node(src) or {}
-    tgt_data = graph.get_node(tgt) or {}
-
-    # 构造选项: 正确答案 + "无关系" + 2个干扰项
-    distractors = [r for r in VALID_RELATIONS if r != correct_relation]
-    random.shuffle(distractors)
-    options = [correct_relation, "无关系"] + distractors[:2]
+    # 构造选项：正确答案 + "无关系" + 4个干扰项 = 6个选项
+    all_relations = [r for r in VALID_RELATIONS if r != correct_relation]
+    random.shuffle(all_relations)
+    if correct_relation != "无关系":
+        options = [correct_relation, "无关系"] + all_relations[:4]
+    else:
+        options = [correct_relation] + all_relations[:5]
     random.shuffle(options)
 
     return {

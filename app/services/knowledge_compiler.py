@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models import (
-    Concept, Claim, ConceptRelation, Segment, VideoCache,
+    Concept, Claim, ConceptRelation, Segment, VideoCache, KnowledgeNode,
 )
 from app.services.extractor import (
     NOISE_EN_WORDS, NOISE_ZH_WORDS, OVERLY_BROAD,
@@ -743,6 +743,28 @@ async def compile_video(
             )
             db.add(concept_row)
             await db.flush()
+
+            # Jingyu: 编译时同步创建 KnowledgeNode，使智能体立即可检索
+            existing_kn = await db.execute(
+                select(KnowledgeNode).where(
+                    KnowledgeNode.owner_mid == owner_mid,
+                    KnowledgeNode.name == cdata["name"],
+                )
+            )
+            if not existing_kn.scalars().first():
+                kn = KnowledgeNode(
+                    node_type="concept",
+                    name=cdata["name"],
+                    normalized_name=norm_name,
+                    definition=cdata["definition"],
+                    difficulty=cdata["difficulty"],
+                    confidence=0.7,
+                    source_count=cdata["source_count"],
+                    review_status="auto",
+                    session_id=session_id,
+                    owner_mid=owner_mid,
+                )
+                db.add(kn)
 
         norm_to_concept_id[norm_name] = concept_row.id
 

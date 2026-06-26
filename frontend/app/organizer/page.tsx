@@ -72,12 +72,40 @@ export default function OrganizerPage() {
   const { sessionId, scopeKey } = useAuthSession();
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [heartedList, setHeartedList] = useState<Set<string>>(new Set());
   const [subjectFilter, setSubjectFilter] = useState("全部");
   const [typeFilter, setTypeFilter] = useState("全部");
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
+  const [heartedVideos, setHeartedVideos] = useState<Set<string>>(new Set());
   const requestIdRef = useRef(0);
+
+  // 加载已收藏的视频列表
+  useEffect(() => {
+    if (sessionId) {
+      collectionApi.list(sessionId).then(list => {
+        setHeartedVideos(new Set(list.map((v: any) => v.bvid)));
+      }).catch(() => {});
+    }
+  }, [sessionId]);
+
+  // 切换收藏
+  const toggleHeart = async (bvid: string, title: string) => {
+    if (!sessionId) return;
+    setHeartedVideos(prev => {
+      const next = new Set(prev);
+      next.has(bvid) ? next.delete(bvid) : next.add(bvid);
+      return next;
+    });
+    try {
+      await collectionApi.toggle(bvid, title, sessionId);
+    } catch {
+      setHeartedVideos(prev => {
+        const next = new Set(prev);
+        next.has(bvid) ? next.delete(bvid) : next.add(bvid);
+        return next;
+      });
+    }
+  };
 
   useEffect(() => {
     setVideos([]);
@@ -154,16 +182,7 @@ export default function OrganizerPage() {
         if (requestIdRef.current === requestId && isActiveSession(activeSessionId)) {
           setError(err?.message || "加载收藏夹失败");
         }
-      });
-
-    // 加载爱心收藏
-    collectionApi.list(sessionId)
-      .then((list) => {
-        if (requestIdRef.current === requestId && isActiveSession(activeSessionId)) {
-          setHeartedList(new Set(list.map((v: any) => v.bvid)));
-        }
       })
-      .catch(() => {})
       .finally(() => {
         if (requestIdRef.current === requestId && isActiveSession(activeSessionId)) {
           setLoading(false);
@@ -194,8 +213,7 @@ export default function OrganizerPage() {
     total: videos.length,
     compiled: videos.filter(v => v.compiled).length,
     withConcepts: videos.filter(v => (v.conceptCount || 0) > 0).length,
-    hearted: heartedList.size,
-  }), [videos, heartedList]);
+  }), [videos]);
 
   return (
     <div className="app-shell">
@@ -240,7 +258,6 @@ export default function OrganizerPage() {
                   <StatCard label="总视频" value={stats.total} />
                   <StatCard label="已编译" value={stats.compiled} />
                   <StatCard label="含知识点" value={stats.withConcepts} />
-                  <StatCard label="❤️ 收藏" value={stats.hearted} />
                 </div>
 
                 <div className="organizer-filter-bar">
@@ -267,38 +284,6 @@ export default function OrganizerPage() {
                 {/* 视频列表 — 与工作台相同的数据源 */}
                 <div className="organizer-layout">
                   <div className="organizer-main" style={{ maxWidth: "100%" }}>
-                    {/* 爱心收藏 */}
-                    {heartedList.size > 0 && (
-                      <section className="organizer-section" style={{ border: "1px solid #f59e0b", borderLeft: "3px solid #f59e0b" }}>
-                        <div className="organizer-section-head">
-                          <h3>❤️ 我的收藏</h3>
-                          <span>{heartedList.size} 项</span>
-                        </div>
-                        <div className="organizer-video-list">
-                          {videos.filter(v => heartedList.has(v.bvid)).map(v => (
-                            <div key={v.bvid} className="organizer-video-card" style={{ borderColor: "#fef3c7" }}>
-                              <div className="organizer-video-top">
-                                <div>
-                                  <div className="organizer-video-title">❤️ {v.title}</div>
-                                  <div className="organizer-video-meta">
-                                    {v.duration && <span>{formatDuration(v.duration)}</span>}
-                                    {v.compiled && <span style={{ color: "var(--primary)", fontWeight: 500 }}>{v.conceptCount || 0} 概念 · {v.claimCount || 0} 论断</span>}
-                                    {!v.compiled && <span style={{ color: "var(--text-tertiary)" }}>未编译</span>}
-                                  </div>
-                                </div>
-                                <div className="organizer-video-stats">
-                                  <a href={`https://www.bilibili.com/video/${v.bvid}`} target="_blank" className="organizer-chip" style={{ textDecoration: "none", fontSize: 12 }}>查看视频</a>
-                                  <a href="/workspace" style={{ textDecoration: "none" }}>
-                                    <span className="organizer-chip" style={{ fontSize: 12, background: "rgba(245,158,11,0.1)", color: "#c4781e" }}>{v.compiled ? "已编译" : "去编译"}</span>
-                                  </a>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </section>
-                    )}
-
                     {/* 全量视频列表 */}
                     <section className="organizer-section">
                       <div className="organizer-section-head">
@@ -317,7 +302,13 @@ export default function OrganizerPage() {
                               <div className="organizer-video-top">
                                 <div>
                                   <div className="organizer-video-title">
-                                    {heartedList.has(video.bvid) && "❤️ "}
+                                    <span
+                                      onClick={(e) => { e.stopPropagation(); toggleHeart(video.bvid, video.title); }}
+                                      style={{ cursor: "pointer", fontSize: 16, userSelect: "none", marginRight: 6 }}
+                                      title={heartedVideos.has(video.bvid) ? "取消收藏" : "加入收藏"}
+                                    >
+                                      {heartedVideos.has(video.bvid) ? "❤️" : "♡"}
+                                    </span>
                                     {video.title}
                                   </div>
                                   <div className="organizer-video-meta">

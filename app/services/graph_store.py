@@ -275,10 +275,20 @@ class GraphStore:
         edge_query = select(KnowledgeEdge)
 
         # 数据隔离：owner_mid 优先，session_id 为 fallback
-        # 两者都为 None → 演示用户/共享模式 → 查看全部数据
-        if owner_mid is not None:
+        # demo 用户 (owner_mid=0) 使用 session_id 过滤（因为 historic 数据边可能无 owner_mid）
+        if owner_mid is not None and owner_mid != 0:
             node_query = node_query.where(KnowledgeNode.owner_mid == owner_mid)
             edge_query = edge_query.where(KnowledgeEdge.owner_mid == owner_mid)
+        elif owner_mid == 0:
+            # demo 用户按 owner_mid=0 过滤，同时兼容 historic NULL owner_mid 的边
+            node_query = node_query.where(KnowledgeNode.owner_mid == 0)
+            if session_id:
+                edge_query = edge_query.where(
+                    (KnowledgeEdge.owner_mid == 0) |
+                    ((KnowledgeEdge.owner_mid == None) & (KnowledgeEdge.session_id == session_id))
+                )
+            else:
+                edge_query = edge_query.where(KnowledgeEdge.owner_mid == 0)
         elif session_id is not None and not session_id.startswith("demo_"):
             node_query = node_query.where(KnowledgeNode.session_id == session_id)
             edge_query = edge_query.where(KnowledgeEdge.session_id == session_id)

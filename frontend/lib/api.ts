@@ -944,6 +944,16 @@ export const organizerApi = {
   },
 };
 
+export const collectionApi = {
+  toggle: (bvid: string, title: string, sessionId: string) =>
+    request<{ hearted: boolean; bvid: string }>("/collection/toggle", {
+      method: "POST",
+      body: JSON.stringify({ bvid, title, session_id: sessionId }),
+    }),
+  list: (sessionId: string) =>
+    request<{ bvid: string; title: string; created_at: string }[]>(`/collection/list?session_id=${sessionId}`),
+};
+
 // ==================== 记忆系统类型 ====================
 
 export interface MemoryStats {

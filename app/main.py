@@ -20,7 +20,7 @@ import sys
 
 from app.config import settings, ensure_directories
 from app.database import init_db
-from app.routers import auth, favorites, knowledge, chat
+from app.routers import auth, favorites, knowledge, chat, collection
 from app.routers import tree
 from app.routers import search
 from app.routers import learning_path
@@ -113,6 +113,7 @@ app.include_router(game.router)
 app.include_router(srs.router)
 app.include_router(compile.router)
 app.include_router(evidence.router)
+app.include_router(collection.router)
 app.include_router(organizer.router)
 app.include_router(tts.router)
 app.include_router(memory.router)

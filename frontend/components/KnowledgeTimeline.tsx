@@ -22,6 +22,7 @@ export default function KnowledgeTimeline({
 }: KnowledgeTimelineProps) {
   const [hoveredSegment, setHoveredSegment] = useState<TimelineSegment | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [selectedSegment, setSelectedSegment] = useState<number | null>(null);
 
   if (!timeline || timeline.length === 0) {
     return (
@@ -87,11 +88,15 @@ export default function KnowledgeTimeline({
         {timeline.map((seg, i) => (
           <div
             key={i}
-            className={`timeline-segment ${seg.is_peak ? "peak" : ""}`}
+            className={`timeline-segment ${seg.is_peak ? "peak" : ""} ${selectedSegment === i ? "selected" : ""}`}
             style={{
               left: `${(seg.start / duration) * 100}%`,
               width: `${((seg.end - seg.start) / duration) * 100}%`,
               opacity: 0.2 + seg.density * 0.8,
+              ...(selectedSegment === i ? { outline: "2px solid var(--primary)", outlineOffset: "2px", zIndex: 2 } : {}),
+            }}
+            onClick={() => {
+              setSelectedSegment(selectedSegment === i ? null : i);
             }}
             onMouseEnter={(e) => {
               setHoveredSegment(seg);
@@ -171,14 +176,20 @@ export default function KnowledgeTimeline({
             {peakSegments.map((seg, i) => (
               <div
                 key={i}
+                onClick={() => {
+                  setSelectedSegment(timeline.indexOf(seg));
+                }}
                 style={{
                   display: "flex",
                   gap: 8,
                   alignItems: "center",
                   padding: "6px 10px",
-                  background: "var(--bg-sunken)",
+                  background: selectedSegment === timeline.indexOf(seg) ? "var(--bg-elevated)" : "var(--bg-sunken)",
                   borderRadius: 6,
                   fontSize: 12,
+                  cursor: "pointer",
+                  border: selectedSegment === timeline.indexOf(seg) ? "1px solid var(--primary)" : "1px solid transparent",
+                  transition: "all 0.15s",
                 }}
               >
                 <span
@@ -199,6 +210,46 @@ export default function KnowledgeTimeline({
               </div>
             ))}
           </div>
+
+          {/* 选中密集段的详情面板 */}
+          {selectedSegment !== null && timeline[selectedSegment] && (
+            <div style={{
+              marginTop: 12,
+              padding: 12,
+              background: "var(--bg-elevated)",
+              border: "1px solid var(--primary)",
+              borderRadius: 8,
+              fontSize: 12,
+            }}>
+              <div style={{ fontWeight: 600, color: "var(--ink)", marginBottom: 8 }}>
+                📍 {formatTime(timeline[selectedSegment].start)} - {formatTime(timeline[selectedSegment].end)}
+                <span style={{ marginLeft: 8, fontSize: 11, color: "var(--text-secondary)", fontWeight: 400 }}>
+                  {timeline[selectedSegment].is_peak ? "🔶 知识密集段" : "知识段"}
+                  {" · "}密度 {Math.round(timeline[selectedSegment].density * 100)}%
+                </span>
+              </div>
+              {timeline[selectedSegment].concepts && timeline[selectedSegment].concepts.length > 0 ? (
+                <div>
+                  <div style={{ fontWeight: 600, color: "var(--text-secondary)", marginBottom: 4 }}>涉及概念：</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {timeline[selectedSegment].concepts.map((c, ci) => (
+                      <span key={ci} style={{
+                        padding: "2px 8px",
+                        background: "var(--primary)",
+                        color: "#fff",
+                        borderRadius: 4,
+                        fontSize: 11,
+                      }}>
+                        {c}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <span style={{ color: "var(--text-tertiary)" }}>该时间段无特定概念标注</span>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

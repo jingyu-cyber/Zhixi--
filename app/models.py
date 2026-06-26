@@ -85,6 +85,18 @@ class UserSession(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class UserCollection(Base):
+    """用户收藏视频表（爱心点亮）"""
+    __tablename__ = 'user_collections'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    bvid = Column(String(20), nullable=False)
+    title = Column(String(200), default="")
+    owner_mid = Column(Integer, nullable=True, index=True)
+    session_id = Column(String(64), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class FavoriteFolder(Base):
     """收藏夹记录表"""
     __tablename__ = 'favorite_folders'
@@ -244,6 +256,7 @@ class Concept(Base):
     difficulty = Column(Integer, default=1)  # 1-5
     source_count = Column(Integer, default=1)  # 被多少个片段提到
     video_count = Column(Integer, default=1)  # 出现在多少个视频中
+    video_bvid = Column(String(20), nullable=True)  # 所属视频 BVID
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

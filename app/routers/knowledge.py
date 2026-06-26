@@ -714,7 +714,7 @@ async def _build_knowledge_base_task(
     exclude_bvids: List[str],
 ):
     """后台构建任务"""
-    cookies = session.get("cookies", {})
+    cookies = session.get("cookies") or {}
 
     try:
         build_tasks[task_id]["status"] = "running"
@@ -742,7 +742,7 @@ async def _build_knowledge_base_task(
                 if not folder_ids:
                     # 自动从 B站发现收藏夹（首次使用无需手动同步）
                     build_tasks[task_id]["current_step"] = "正在从B站获取收藏夹列表..."
-                    user_info = session.get("user_info", {})
+                    user_info = session.get("user_info") or {}
                     mid = user_info.get("mid") or cookies.get("DedeUserID")
                     if mid:
                         try:

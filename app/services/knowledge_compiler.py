@@ -888,6 +888,7 @@ async def compile_video(
                             confidence=0.5,
                             evidence_video_bvid=bvid,
                             session_id=session_id,
+                            owner_mid=owner_mid,
                         )
                         db.add(edge)
                         synced_edge_count += 1

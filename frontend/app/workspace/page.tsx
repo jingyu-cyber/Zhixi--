@@ -380,6 +380,7 @@ export default function WorkspacePage() {
   };
 
   const tabs: { key: TabKey; label: string }[] = [
+    { key: "video", label: "视频" },
     { key: "timeline", label: "时间轴" },
     { key: "map", label: "知识图" },
     { key: "claims", label: "论断" },

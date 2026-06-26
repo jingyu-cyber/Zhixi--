@@ -110,16 +110,6 @@ export default function GamePage() {
     return { ...base, opacity: 0.4 };
   };
 
-  const relationIcon = (label: string) => {
-    if (label.includes("前置")) return "⬆️";
-    if (label.includes("包含") || label.includes("属于")) return "📦";
-    if (label.includes("支撑")) return "🏗️";
-    if (label.includes("解释")) return "💡";
-    if (label.includes("推荐")) return "👉";
-    if (label.includes("无关系")) return "✂️";
-    if (label.includes("相关")) return "🔗";
-    return "❓";
-  };
 
   return (
     <div className="app-shell">
@@ -245,8 +235,14 @@ export default function GamePage() {
                       onClick={() => handleAnswer(opt)}
                       disabled={!!selected}
                     >
-                      <span style={{ marginRight: 8 }}>{relationIcon(challenge.option_labels[opt] || opt)}</span>
-                      {challenge.option_labels[opt] || opt}
+                      <span style={{
+                        display: "inline-flex", alignItems: "center", justifyContent: "center",
+                        width: 26, height: 26, borderRadius: "50%",
+                        background: selected ? undefined : "rgba(99,102,241,0.1)",
+                        color: selected ? undefined : "var(--primary)",
+                        fontWeight: 700, marginRight: 10, fontSize: 13, flexShrink: 0,
+                      }}>{opt}</span>
+                      <span style={{ lineHeight: 1.5 }}>{challenge.option_labels[opt] || opt}</span>
                     </button>
                   ))}
                 </div>
@@ -266,7 +262,7 @@ export default function GamePage() {
                       {result.correct ? "🎉 回答正确！" : "💡 再想想！"}
                     </div>
                     <div style={{ fontSize: 13, marginTop: 4, opacity: 0.9 }}>
-                      正确关系：{result.correct_answer_label}
+                      正确答案：{result.correct_answer}
                     </div>
                   </div>
                 )}

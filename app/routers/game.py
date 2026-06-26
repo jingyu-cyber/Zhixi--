@@ -1,7 +1,7 @@
 """
 BiliMind 知识树学习导航系统
 
-知识预测游戏路由 - 猜关系玩法
+知识预测游戏路由 - 概念关系猜测
 """
 import random
 from typing import Optional
@@ -22,33 +22,106 @@ async def _get_session_graph(db: AsyncSession, session_id: Optional[str]) -> Gra
     from app.utils import resolve_owner_mid as _resolve_owner_mid
     owner_mid = await _resolve_owner_mid(db, session_id)
     graph = GraphStore(graph_path=settings.graph_persist_path)
-    # 按 owner_mid 隔离：每个用户只能用自己的知识树数据出题
     await graph.load_from_db(db, session_id=None, owner_mid=owner_mid)
     return graph
 
-# 有效关系类型
-VALID_RELATIONS = [
-    "prerequisite_of",
-    "part_of",
-    "related_to",
-    "explains",
-    "supports",
-    "recommends_next",
-    "co_occurrence",
-    "belongs_to",
-]
-
-RELATION_LABELS = {
-    "prerequisite_of": "前置知识",
-    "part_of": "属于/包含",
-    "related_to": "相关概念",
-    "explains": "解释说明",
-    "supports": "支撑论证",
-    "recommends_next": "推荐下一步",
-    "co_occurrence": "共同出现",
-    "belongs_to": "属于主题",
-    "无关系": "无关系",
+RELATION_TEMPLATES = {
+    "belongs_to": {
+        "correct": "「{a}」是「{b}」主题下的一个知识点",
+        "wrong": [
+            "「{b}」是「{a}」的子概念，属于同一知识体系",
+            "「{a}」和「{b}」是完全无关的两个概念",
+            "「{a}」必须先掌握「{b}」才能理解",
+        ],
+    },
+    "co_occurrence": {
+        "correct": "「{a}」和「{b}」经常在同一学习内容中出现，互相关联",
+        "wrong": [
+            "「{a}」是「{b}」的前提知识，必须先学前者",
+            "「{a}」和「{b}」是同一概念的不同名称",
+            "「{b}」完全包含了「{a}」的知识范畴",
+        ],
+    },
+    "prerequisite_of": {
+        "correct": "「{a}」是学习「{b}」的前置知识，必须先掌握",
+        "wrong": [
+            "「{a}」和「{b}」可以独立学习，没有先后关系",
+            "「{b}」是「{a}」的基础，应该先学后者",
+            "「{a}」和「{b}」属于完全不同的学科领域",
+        ],
+    },
+    "part_of": {
+        "correct": "「{a}」是「{b}」的一个组成部分或子类别",
+        "wrong": [
+            "「{a}」和「{b}」是同一层级的并列概念",
+            "「{b}」是「{a}」的一个具体实例",
+            "「{a}」和「{b}」之间没有包含关系",
+        ],
+    },
+    "related_to": {
+        "correct": "「{a}」和「{b}」在知识体系中密切相关，互相参照",
+        "wrong": [
+            "「{a}」是「{b}」的充分必要条件",
+            "「{a}」和「{b}」来自不同的学科，没有交叉",
+            "学习「{b}」之前必须先完全掌握「{a}」",
+        ],
+    },
+    "explains": {
+        "correct": "「{a}」可以用来解释或说明「{b}」的含义",
+        "wrong": [
+            "「{a}」和「{b}」互不相干，各自独立",
+            "「{b}」是「{a}」的上位概念，范畴更大",
+            "「{a}」与「{b}」互为反义概念",
+        ],
+    },
+    "supports": {
+        "correct": "「{a}」为「{b}」提供了理论支撑或证据支持",
+        "wrong": [
+            "「{a}」和「{b}」相互矛盾，不能共存",
+            "「{b}」的存在否定了「{a}」的正确性",
+            "「{a}」和「{b}」没有任何逻辑联系",
+        ],
+    },
+    "recommends_next": {
+        "correct": "掌握「{a}」后，推荐继续学习「{b}」以深化理解",
+        "wrong": [
+            "必须先学「{b}」才能学「{a}」，顺序不可颠倒",
+            "「{a}」和「{b}」学习顺序任意，没有推荐路径",
+            "「{a}」和「{b}」属于互斥的学习方向",
+        ],
+    },
+    "无关系": {
+        "correct": "「{a}」和「{b}」之间没有直接的知识关联",
+        "wrong": [
+            "「{a}」是「{b}」的进阶内容",
+            "「{a}」和「{b}」属于同一知识体系",
+            "「{b}」包含了「{a}」的核心思想",
+        ],
+    },
 }
+
+
+def _generate_options(a_name: str, b_name: str, relation: str):
+    """根据两个概念和实际关系，生成4个自然语言选项（A/B/C/D）"""
+    tmpl = RELATION_TEMPLATES.get(relation, RELATION_TEMPLATES["无关系"])
+    correct_text = tmpl["correct"].format(a=a_name, b=b_name)
+    wrong_texts = [t.format(a=a_name, b=b_name) for t in tmpl["wrong"]]
+
+    # 随机选3个错误选项
+    random.shuffle(wrong_texts)
+    selected_wrong = wrong_texts[:3]
+
+    # 组装选项
+    labels = ["A", "B", "C", "D"]
+    random.shuffle(labels)
+    option_texts = {}
+    correct_label = labels[0]
+    option_texts[correct_label] = correct_text
+    for i, wt in enumerate(selected_wrong):
+        option_texts[labels[i + 1]] = wt
+
+    options = sorted(option_texts.keys())
+    return options, option_texts, correct_label
 
 
 class AnswerRequest(BaseModel):
@@ -63,7 +136,7 @@ async def get_challenge(
     session_id: Optional[str] = Query(None, description="会话ID"),
     db: AsyncSession = Depends(get_db),
 ):
-    """随机生成一道知识关系预测题：50%有关系的概念对 + 50%无关系的概念对"""
+    """随机生成一道概念关系题，4个自然语言选项"""
     if not session_id:
         raise HTTPException(status_code=400, detail="需要提供 session_id")
 
@@ -74,64 +147,39 @@ async def get_challenge(
     if len(nodes) < 2:
         return {"empty": True, "message": "知识图谱中节点不足", "node_a": None, "node_b": None, "options": []}
 
-    # 50% 概率：挑选无关系的两个概念（正确答案为"无关系"）
+    # 挑选概念对
     if random.random() < 0.5 and len(nodes) >= 2:
-        # 随机选两个不同的节点
         a_idx, b_idx = random.sample(range(len(nodes)), 2)
         src, src_data = nodes[a_idx]
         tgt, tgt_data = nodes[b_idx]
-        # 检查是否真的没有边
-        if graph.graph.has_edge(src, tgt) or graph.graph.has_edge(tgt, src):
-            # 有边就fallback到有用边
-            if edges:
-                src, tgt, data = random.choice(edges)
-                correct_relation = data.get("relation_type", "related_to")
-                src_data = graph.get_node(src) or {}
-                tgt_data = graph.get_node(tgt) or {}
-            else:
-                src, tgt = src, tgt  # keep the random pair
-                correct_relation = "无关系"
-                src_data = src_data or {}
-                tgt_data = tgt_data or {}
+        if graph.graph.has_edge(src, tgt):
+            correct_relation = graph.graph.get_edge_data(src, tgt).get("relation_type", "related_to")
+        elif graph.graph.has_edge(tgt, src):
+            correct_relation = graph.graph.get_edge_data(tgt, src).get("relation_type", "related_to")
         else:
             correct_relation = "无关系"
     elif edges:
-        # 随机选一条有关系的边
         src, tgt, data = random.choice(edges)
         correct_relation = data.get("relation_type", "related_to")
         src_data = graph.get_node(src) or {}
         tgt_data = graph.get_node(tgt) or {}
     else:
-        # 没有边，随机两个节点
         a_idx, b_idx = random.sample(range(len(nodes)), 2)
         src, src_data = nodes[a_idx]
         tgt, tgt_data = nodes[b_idx]
         correct_relation = "无关系"
 
-    # 构造选项：正确答案 + "无关系" + 4个干扰项 = 6个选项
-    all_relations = [r for r in VALID_RELATIONS if r != correct_relation]
-    random.shuffle(all_relations)
-    if correct_relation != "无关系":
-        options = [correct_relation, "无关系"] + all_relations[:4]
-    else:
-        options = [correct_relation] + all_relations[:5]
-    random.shuffle(options)
+    a_name = src_data.get("name", f"Node {src}")
+    b_name = tgt_data.get("name", f"Node {tgt}")
+
+    options, option_labels, correct_option = _generate_options(a_name, b_name, correct_relation)
 
     return {
-        "node_a": {
-            "id": src,
-            "name": src_data.get("name", f"Node {src}"),
-            "type": src_data.get("node_type", "concept"),
-            "definition": src_data.get("definition", ""),
-        },
-        "node_b": {
-            "id": tgt,
-            "name": tgt_data.get("name", f"Node {tgt}"),
-            "type": tgt_data.get("node_type", "concept"),
-            "definition": tgt_data.get("definition", ""),
-        },
+        "node_a": {"id": src, "name": a_name, "type": src_data.get("node_type", "concept"), "definition": src_data.get("definition", "")},
+        "node_b": {"id": tgt, "name": b_name, "type": tgt_data.get("node_type", "concept"), "definition": tgt_data.get("definition", "")},
         "options": options,
-        "option_labels": {o: RELATION_LABELS.get(o, o) for o in options},
+        "option_labels": option_labels,
+        "correct_option": correct_option,
     }
 
 
@@ -143,91 +191,70 @@ async def submit_answer(
     """提交答案并更新分数"""
     graph = await _get_session_graph(db, req.session_id)
 
-    # 查找实际关系
     edge_data = graph.graph.get_edge_data(req.node_a_id, req.node_b_id)
     if edge_data is None:
-        # 也检查反向
         edge_data = graph.graph.get_edge_data(req.node_b_id, req.node_a_id)
 
-    correct_answer = edge_data.get("relation_type", "related_to") if edge_data else "无关系"
-    is_correct = req.answer == correct_answer
+    real_relation = edge_data.get("relation_type", "related_to") if edge_data else "无关系"
 
-    # 获取节点名称用于解释
-    src_data = graph.get_node(req.node_a_id) or {}
-    tgt_data = graph.get_node(req.node_b_id) or {}
-    src_name = src_data.get("name", "A")
-    tgt_name = tgt_data.get("name", "B")
+    # 生成正确选项来验证
+    a_name = (graph.get_node(req.node_a_id) or {}).get("name", f"Node {req.node_a_id}")
+    b_name = (graph.get_node(req.node_b_id) or {}).get("name", f"Node {req.node_b_id}")
+    _, _, correct_id = _generate_options(a_name, b_name, real_relation)
 
-    explanation = (
-        f"「{src_name}」与「{tgt_name}」之间的关系是：{RELATION_LABELS.get(correct_answer, correct_answer)}"
-    )
+    is_correct = req.answer == correct_id
 
-    # 更新 GameScore
-    result = await db.execute(
-        select(GameScore).where(GameScore.session_id == req.session_id)
-    )
-    score_record = result.scalar_one_or_none()
-
-    if score_record is None:
-        score_record = GameScore(
-            session_id=req.session_id,
-            score=0, total_challenges=0, correct_count=0, streak=0, best_streak=0,
-        )
-        db.add(score_record)
-        await db.flush()
-
-    score_record.total_challenges = (score_record.total_challenges or 0) + 1
-    if is_correct:
-        score_record.correct_count = (score_record.correct_count or 0) + 1
-        score_record.streak = (score_record.streak or 0) + 1
-        score_record.score = (score_record.score or 0) + 10 + score_record.streak * 2
-        if score_record.streak > (score_record.best_streak or 0):
-            score_record.best_streak = score_record.streak
-    else:
-        score_record.streak = 0
-
+    # 更新游戏分数
+    score = 0
+    streak = 0
     try:
-        await db.commit()
-        await db.refresh(score_record)
-    except Exception as e:
-        logger.error(f"游戏分数保存失败: {e}")
-        await db.rollback()
-        raise HTTPException(status_code=500, detail=f"保存失败: {e}")
+        result = await db.execute(
+            select(GameScore).where(GameScore.session_id == req.session_id)
+        )
+        gs = result.scalars().first()
+        if gs:
+            gs.total_challenges += 1
+            if is_correct:
+                gs.correct_count += 1
+                gs.streak += 1
+                gs.best_streak = max(gs.best_streak, gs.streak)
+                gs.score += 10 + gs.streak * 2
+            else:
+                gs.streak = 0
+            score = gs.score
+            streak = gs.streak
+            await db.commit()
+    except Exception:
+        pass
 
     return {
         "correct": is_correct,
-        "correct_answer": correct_answer,
-        "correct_answer_label": RELATION_LABELS.get(correct_answer, correct_answer),
-        "explanation": explanation,
-        "score": score_record.score,
-        "streak": score_record.streak,
+        "correct_answer": correct_id,
+        "correct_answer_label": f"{correct_id}",
+        "explanation": "",
+        "score": score,
+        "streak": streak,
     }
 
 
 @router.get("/stats")
 async def get_stats(
-    session_id: str = Query("00000000-0000-0000-0000-000000000000", description="会话ID"),
+    session_id: Optional[str] = Query(None, description="会话ID"),
     db: AsyncSession = Depends(get_db),
 ):
     """获取用户游戏统计"""
+    if not session_id:
+        return {"total": 0, "correct": 0, "streak": 0, "best_streak": 0, "score": 0}
     result = await db.execute(
         select(GameScore).where(GameScore.session_id == session_id)
     )
-    record = result.scalar_one_or_none()
-
-    if record is None:
-        return {
-            "total": 0,
-            "correct": 0,
-            "streak": 0,
-            "best_streak": 0,
-            "score": 0,
-        }
-
+    gs = result.scalars().first()
+    if not gs:
+        return {"total": 0, "correct": 0, "streak": 0, "best_streak": 0, "score": 0}
     return {
-        "total": record.total_challenges,
-        "correct": record.correct_count,
-        "streak": record.streak,
-        "best_streak": record.best_streak,
-        "score": record.score,
+        "total": gs.total_challenges,
+        "correct": gs.correct_count,
+        "streak": gs.streak,
+        "best_streak": gs.best_streak,
+        "score": gs.score,
     }

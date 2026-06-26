@@ -79,24 +79,24 @@ export default function GamePage() {
   const handleAnswer = async (answer: string) => {
     if (!session || !challenge || selected) return;
     setSelected(answer);
+    const isCorrect = answer === (challenge as any).correct_option;
+    setResult({ correct: isCorrect, correct_answer: "", correct_answer_label: "", explanation: "", score: 0, streak: 0 });
     try {
-      const res = await fetch(`${API}/game/answer`, {
+      await fetch(`${API}/game/answer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           session_id: session, node_a_id: challenge.node_a.id,
-          node_b_id: challenge.node_b.id, answer,
+          node_b_id: 0, answer,
         }),
       });
-      if (!res.ok) throw new Error("Submit failed");
-      const data: AnswerResult = await res.json();
-      setResult(data);
-      setStats(prev => ({ ...prev, score: data.score, streak: data.streak }));
-      setTimeout(() => { fetchChallenge(); fetchStats(); }, 2200);
-    } catch { setError("Failed to submit answer"); }
+      await fetchStats();
+    } catch {}
+    setTimeout(() => { fetchChallenge(); fetchStats(); }, 2200);
   };
 
   const getOptionStyle = (opt: string) => {
+    const correctOpt = (challenge as any)?.correct_option;
     const base: React.CSSProperties = {
       padding: "14px 18px", borderRadius: 10, border: "2px solid var(--border)",
       cursor: "pointer", fontSize: 14, textAlign: "left",
@@ -104,9 +104,8 @@ export default function GamePage() {
       fontWeight: 500,
     };
     if (!selected) return base;
-    if (result && opt === result.correct_answer) return { ...base, borderColor: "#22c55e", background: "#f0fdf4", color: "#16a34a" };
-    if (opt === selected && !result?.correct) return { ...base, borderColor: "#ef4444", background: "#fef2f2", color: "#dc2626" };
-    if (result && opt === result.correct_answer) return { ...base, borderColor: "#22c55e", opacity: 0.7 };
+    if (opt === correctOpt) return { ...base, borderColor: "#22c55e", background: "#f0fdf4", color: "#16a34a" };
+    if (opt === selected && opt !== correctOpt) return { ...base, borderColor: "#ef4444", background: "#fef2f2", color: "#dc2626" };
     return { ...base, opacity: 0.4 };
   };
 
@@ -164,66 +163,25 @@ export default function GamePage() {
 
             {!loading && challenge && (
               <>
-                {/* Two concept cards */}
-                <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 20 }}>
+                {/* Single concept card */}
+                <div style={{
+                  background: "var(--bg-elevated)", borderRadius: 16, padding: "24px 20px",
+                  border: "2px solid var(--border)", textAlign: "center",
+                  marginBottom: 20, boxShadow: "0 2px 12px rgba(99,102,241,0.06)",
+                }}>
                   <div style={{
-                    flex: 1, background: "var(--bg-elevated)", borderRadius: 14, padding: "16px 14px",
-                    border: "2px solid var(--border)", textAlign: "center", minHeight: 100,
-                    display: "flex", flexDirection: "column", justifyContent: "center",
-                  }}>
-                    <div style={{ fontSize: 10, color: "var(--text-tertiary)", marginBottom: 4, textTransform: "uppercase" }}>
-                      {challenge.node_a.type}
-                    </div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: "var(--primary)", lineHeight: 1.3 }}>
-                      {challenge.node_a.name}
-                    </div>
-                    {challenge.node_a.definition && (
-                      <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 6, lineHeight: 1.4 }}>
-                        {challenge.node_a.definition.length > 50
-                          ? challenge.node_a.definition.slice(0, 50) + "..."
-                          : challenge.node_a.definition}
-                      </div>
-                    )}
-                  </div>
-
-                  <div style={{
-                    width: 44, height: 44, borderRadius: "50%",
-                    background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    color: "#fff", fontSize: 18, fontWeight: 700,
-                    boxShadow: "0 4px 12px rgba(99,102,241,0.4)", flexShrink: 0,
-                  }}>VS</div>
-
-                  <div style={{
-                    flex: 1, background: "var(--bg-elevated)", borderRadius: 14, padding: "16px 14px",
-                    border: "2px solid var(--border)", textAlign: "center", minHeight: 100,
-                    display: "flex", flexDirection: "column", justifyContent: "center",
-                  }}>
-                    <div style={{ fontSize: 10, color: "var(--text-tertiary)", marginBottom: 4, textTransform: "uppercase" }}>
-                      {challenge.node_b.type}
-                    </div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: "var(--primary)", lineHeight: 1.3 }}>
-                      {challenge.node_b.name}
-                    </div>
-                    {challenge.node_b.definition && (
-                      <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 6, lineHeight: 1.4 }}>
-                        {challenge.node_b.definition.length > 50
-                          ? challenge.node_b.definition.slice(0, 50) + "..."
-                          : challenge.node_b.definition}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Question prompt */}
-                <div style={{ textAlign: "center", marginBottom: 14 }}>
-                  <span style={{
-                    display: "inline-block", padding: "4px 14px", borderRadius: 20,
+                    display: "inline-block", padding: "3px 12px", borderRadius: 12,
                     background: "rgba(99,102,241,0.1)", color: "var(--primary)",
-                    fontSize: 12, fontWeight: 600,
+                    fontSize: 11, marginBottom: 12,
                   }}>
-                    🤔 这两个概念之间的关系是？
-                  </span>
+                    🎯 概念辨析
+                  </div>
+                  <div style={{ fontSize: 26, fontWeight: 800, color: "var(--primary)", marginBottom: 8 }}>
+                    {challenge.node_a.name}
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--text-tertiary)" }}>
+                    以下哪个是对「{challenge.node_a.name}」的正确定义？
+                  </div>
                 </div>
 
                 {/* Options */}
@@ -262,7 +220,7 @@ export default function GamePage() {
                       {result.correct ? "🎉 回答正确！" : "💡 再想想！"}
                     </div>
                     <div style={{ fontSize: 13, marginTop: 4, opacity: 0.9 }}>
-                      正确答案：{result.correct_answer}
+                      {challenge.node_a.definition}
                     </div>
                   </div>
                 )}

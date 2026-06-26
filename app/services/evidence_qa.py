@@ -156,9 +156,12 @@ async def _match_concepts(
     keywords: List[str],
     session_id: Optional[str] = None,
 ) -> List[Concept]:
-    """根据关键词模糊匹配 Concept 表。"""
+    """根据关键词模糊匹配 Concept 表（按 owner_mid 隔离）。"""
     if not keywords:
         return []
+
+    from app.utils import resolve_owner_mid as _resolve_owner_mid
+    owner_mid = await _resolve_owner_mid(db, session_id) if session_id else None
 
     like_conds = []
     for kw in keywords:
@@ -167,7 +170,9 @@ async def _match_concepts(
         like_conds.append(Concept.name.ilike(pattern))
 
     stmt = select(Concept).where(or_(*like_conds))
-    if session_id:
+    if owner_mid is not None:
+        stmt = stmt.where(Concept.owner_mid == owner_mid)
+    elif session_id:
         stmt = stmt.where(Concept.session_id == session_id)
     stmt = stmt.limit(20)
 

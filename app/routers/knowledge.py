@@ -51,9 +51,11 @@ def get_extractor() -> KnowledgeExtractor:
         _extractor = KnowledgeExtractor()
     return _extractor
 async def _load_graph_for_session(db: AsyncSession, session_id: Optional[str]) -> GraphStore:
-    """为当前用户加载隔离后的图谱快照。"""
+    """为当前用户加载隔离后的图谱快照（按 owner_mid 过滤）。"""
+    from app.utils import resolve_owner_mid as _resolve_owner_mid
+    owner_mid = await _resolve_owner_mid(db, session_id) if session_id else None
     graph = GraphStore(graph_path=settings.graph_persist_path)
-    await graph.load_from_db(db, session_id=session_id)
+    await graph.load_from_db(db, session_id=None, owner_mid=owner_mid)
     return graph
 
 

@@ -28,7 +28,7 @@ const KnowledgeMap = dynamic(() => import("@/components/KnowledgeMap"), {
   ),
 });
 
-type TabKey = "video" | "timeline" | "map" | "claims";
+type TabKey = "video" | "map" | "claims";
 
 interface VideoItem {
   bvid: string;
@@ -381,7 +381,6 @@ export default function WorkspacePage() {
 
   const tabs: { key: TabKey; label: string }[] = [
     { key: "video", label: "视频" },
-    { key: "timeline", label: "时间轴" },
     { key: "map", label: "知识图" },
     { key: "claims", label: "论断" },
   ];
@@ -745,13 +744,6 @@ export default function WorkspacePage() {
                       <div style={{ padding: 16 }}>
                         <VideoPlayer bvid={selectedBvid} title={videos.find(v => v.bvid === selectedBvid)?.title} />
                       </div>
-                    )}
-                    {activeTab === "timeline" && (
-                      <KnowledgeTimeline
-                        timeline={compileResult.timeline}
-                        duration={compileResult.video.duration}
-                        videoTitle={compileResult.video.title}
-                      />
                     )}
                     {activeTab === "map" && (
                       <KnowledgeMap compileResult={compileResult} />

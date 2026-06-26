@@ -149,12 +149,16 @@ export default function KnowledgeMap({ compileResult }: KnowledgeMapProps) {
         lines.push(`# ${compileResult.video.title}`);
 
         for (const concept of compileResult.concepts) {
-          lines.push(`## ${concept.name}`);
+          const safeName = String(concept.name || "").slice(0, 80);
+          lines.push(`## ${safeName}`);
           if (concept.definition) {
-            lines.push(`- _${concept.definition}_`);
+            const safeDef = String(concept.definition).slice(0, 150);
+            lines.push(`- _${safeDef}_`);
           }
-          for (const claim of concept.claims) {
-            lines.push(`- ${claim.statement} [${claim.time}]`);
+          for (const claim of (concept.claims || []).slice(0, 5)) {
+            const safeStatement = String(claim.statement || "").slice(0, 100);
+            const safeTime = String(claim.time || "");
+            lines.push(`- ${safeStatement} [${safeTime}]`);
           }
         }
 

@@ -52,6 +52,7 @@ export default function WorkspacePage() {
   const [compileResult, setCompileResult] = useState<CompileResult | null>(null);
   const [compiling, setCompiling] = useState<string | null>(null);
   const [compileProgress, setCompileProgress] = useState(0);
+  const [compileSuccess, setCompileSuccess] = useState("");
   const [loadingResult, setLoadingResult] = useState(false);
   const [loadingVideos, setLoadingVideos] = useState(true);
   const [batchBuilding, setBatchBuilding] = useState(false);
@@ -61,7 +62,6 @@ export default function WorkspacePage() {
   const [batchMessage, setBatchMessage] = useState("");
   const [videoLoadError, setVideoLoadError] = useState("");
   const [compileError, setCompileError] = useState("");
-  const [compileSuccess, setCompileSuccess] = useState(""); // Jingyu: 编译成功提示
   const [expandedCourses, setExpandedCourses] = useState<Set<string>>(new Set());
   const [coursePages, setCoursePages] = useState<Record<string, VideoPageInfo[]>>({});
   const [loadingPages, setLoadingPages] = useState<Set<string>>(new Set());

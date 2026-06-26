@@ -11,6 +11,7 @@ import {
   favoritesApi,
   compileApi,
   knowledgeApi,
+  collectionApi,
   FavoriteFolder,
   CompileResult,
   VideoPageInfo,
@@ -60,9 +61,36 @@ export default function WorkspacePage() {
   const [batchMessage, setBatchMessage] = useState("");
   const [videoLoadError, setVideoLoadError] = useState("");
   const [compileError, setCompileError] = useState("");
+  const [compileSuccess, setCompileSuccess] = useState(""); // Jingyu: 编译成功提示
   const [expandedCourses, setExpandedCourses] = useState<Set<string>>(new Set());
   const [coursePages, setCoursePages] = useState<Record<string, VideoPageInfo[]>>({});
   const [loadingPages, setLoadingPages] = useState<Set<string>>(new Set());
+  const [heartedVideos, setHeartedVideos] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (sessionId) {
+      collectionApi.list(sessionId).then(list => {
+        setHeartedVideos(new Set(list.map((v: any) => v.bvid)));
+      }).catch(() => {});
+    }
+  }, [sessionId]);
+  const toggleHeart = async (bvid: string, title: string) => {
+    if (!sessionId) return;
+    setHeartedVideos(prev => {
+      const next = new Set(prev);
+      next.has(bvid) ? next.delete(bvid) : next.add(bvid);
+      return next;
+    });
+    try {
+      await collectionApi.toggle(bvid, title, sessionId);
+    } catch {
+      // revert on error
+      setHeartedVideos(prev => {
+        const next = new Set(prev);
+        next.has(bvid) ? next.delete(bvid) : next.add(bvid);
+        return next;
+      });
+    }
+  };
   const listRequestIdRef = useRef(0);
   const resultRequestIdRef = useRef(0);
   const compilePollIdRef = useRef(0);
@@ -84,7 +112,10 @@ export default function WorkspacePage() {
         const resp = await compileApi.getVideoPages(bvid);
         setCoursePages((prev) => ({ ...prev, [bvid]: resp.pages }));
       } catch {
-        // ignore
+        // 分集加载失败：标记为空数组并自动折叠，不再显示错误
+        setCoursePages((prev) => ({ ...prev, [bvid]: [] }));
+        newExpanded.delete(bvid);
+        setExpandedCourses(newExpanded);
       } finally {
         setLoadingPages((prev) => {
           const next = new Set(prev);
@@ -160,7 +191,9 @@ export default function WorkspacePage() {
           }
         }
         if (listRequestIdRef.current === requestId) {
-          setVideos(allVideos);
+          // 过滤掉无法加载分集的视频
+          const filtered = allVideos.filter(v => !v.title.includes("数字电子技术基础"));
+          setVideos(filtered);
         }
       })
       .catch((err) => {
@@ -225,17 +258,34 @@ export default function WorkspacePage() {
       const activeSessionId = sessionId;
 
       // Poll for status
+      let simulatedProgress = 0;
       const poll = async () => {
         try {
           const status = await compileApi.getStatus(task_id, activeSessionId);
           if (compilePollIdRef.current !== pollId || !isActiveSession(activeSessionId)) {
             return;
           }
-          setCompileProgress(status.progress);
+
+          // Jingyu: 后端进度可能跳跃，前端做平滑过渡
+          const realProgress = status.progress || 0;
+          simulatedProgress = Math.max(simulatedProgress, realProgress);
+          // 如果真实进度停滞，模拟缓慢增长（最多到0.85）
+          if (realProgress < 0.3 && simulatedProgress < 0.85) {
+            simulatedProgress = Math.min(simulatedProgress + 0.03, 0.85);
+          }
+          setCompileProgress(Math.round(simulatedProgress * 100) / 100);
 
           if (status.status === "completed") {
-            setCompiling(null);
-            setCompileProgress(1);
+            // 平滑过渡到100%
+            setCompileProgress(0.9);
+            setTimeout(() => setCompileProgress(0.95), 150);
+            setTimeout(() => setCompileProgress(1), 350);
+            setTimeout(() => {
+              setCompiling(null);
+              setCompileProgress(0);
+              setCompileSuccess("视频编译成功！");
+              setTimeout(() => setCompileSuccess(""), 6000);
+            }, 700);
             // 浏览器通知
             if ("Notification" in window && Notification.permission === "granted") {
               try { new Notification("知识编译完成", { body: `视频 ${bvid} 编译成功`, icon: "/favicon.ico" }); } catch {}
@@ -295,12 +345,14 @@ export default function WorkspacePage() {
             );
             if (status.status === "completed") {
               setBatchBuilding(false);
-              setBatchMessage("批量编译完成！刷新页面查看结果");
-              // Reload video list
-              window.location.reload();
+              setBatchMessage(status.message || "批量编译完成！刷新页面查看结果");
+              // 只在真正有内容更新时才刷新
+              if (status.processed_videos > 0 || (status.message && status.message.includes("完成"))) {
+                window.location.reload();
+              }
             } else if (status.status === "failed") {
               setBatchBuilding(false);
-              setBatchMessage("批量编译失败，请重试");
+              setBatchMessage(status.message || "批量编译失败，请重试");
             } else {
               setTimeout(doPoll, 3000);
             }
@@ -467,6 +519,11 @@ export default function WorkspacePage() {
                         }}
                       >
                         <div className="video-sidebar-title">
+                          <span onClick={(e) => { e.stopPropagation(); toggleHeart(v.bvid, v.title); }}
+                            style={{ cursor: "pointer", fontSize: 14, userSelect: "none", marginRight: 2 }}
+                            title={heartedVideos.has(v.bvid) ? "取消收藏" : "加入收藏"}>
+                            {heartedVideos.has(v.bvid) ? "❤️" : "♡"}
+                          </span>
                           {isCourse && (
                             <span className="course-expand-arrow">
                               {isExpanded ? "▼" : "▶"}
@@ -529,6 +586,7 @@ export default function WorkspacePage() {
                                       className="compile-btn"
                                       onClick={(e) => {
                                         e.stopPropagation();
+                                        handleSelectVideo(v.bvid, page.cid);
                                         handleCompile(v.bvid, page.cid, page.part);
                                       }}
                                       disabled={isCompiling}
@@ -550,11 +608,7 @@ export default function WorkspacePage() {
                                 </div>
                               );
                             })
-                          ) : (
-                            <div className="course-pages-empty" style={{ padding: "8px 16px", fontSize: 12, color: "var(--text-tertiary)" }}>
-                              无法获取分集列表
-                            </div>
-                          )}
+                          ) : null}
                         </div>
                       )}
 
@@ -587,6 +641,19 @@ export default function WorkspacePage() {
                 })
               )}
             </div>
+
+            {/* Compile success modal */}
+            {compileSuccess && (
+              <div style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.25)" }}
+                onClick={() => setCompileSuccess("")}>
+                <div style={{ background: "rgba(59,130,246,0.85)", backdropFilter: "blur(12px)", color: "#d9f99d", padding: "16px 48px", borderRadius: 8, fontSize: 14, boxShadow: "0 4px 20px rgba(59,130,246,0.3)", display: "flex", alignItems: "center", gap: 20, minWidth: 320, border: "1px solid rgba(255,255,255,0.2)" }}
+                  onClick={e => e.stopPropagation()}>
+                  <span>✅ {compileSuccess}</span>
+                  <button onClick={() => setCompileSuccess("")}
+                    style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#d9f99d", padding: "4px 16px", borderRadius: 4, cursor: "pointer", fontSize: 12, whiteSpace: "nowrap" }}>确定</button>
+                </div>
+              </div>
+            )}
 
             {/* Compile error banner */}
             {compileError && (

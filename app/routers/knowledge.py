@@ -740,10 +740,23 @@ async def _build_knowledge_base_task(
                     )
                     folder_ids = list(dict.fromkeys(r[0] for r in rows.fetchall()))
                 if not folder_ids:
-                    build_tasks[task_id]["status"] = "completed"
-                    build_tasks[task_id]["progress"] = 100
-                    build_tasks[task_id]["message"] = "没有已同步的收藏夹，请先在首页同步"
-                    return
+                    # 自动从 B站发现收藏夹（首次使用无需手动同步）
+                    build_tasks[task_id]["current_step"] = "正在从B站获取收藏夹列表..."
+                    user_info = session.get("user_info", {})
+                    mid = user_info.get("mid") or cookies.get("DedeUserID")
+                    if mid:
+                        try:
+                            folders = await bili.get_user_favorites(mid=mid)
+                            folder_ids = [f.get("id") for f in folders if f.get("id")]
+                            if folder_ids:
+                                build_tasks[task_id]["current_step"] = f"发现 {len(folder_ids)} 个收藏夹，开始同步..."
+                        except Exception as e:
+                            logger.warning(f"自动发现收藏夹失败: {e}")
+                    if not folder_ids:
+                        build_tasks[task_id]["status"] = "completed"
+                        build_tasks[task_id]["progress"] = 100
+                        build_tasks[task_id]["message"] = "未找到B站收藏夹，请确认账号已绑定B站并收藏了视频"
+                        return
             total_folders = len(folder_ids)
 
             processed = 0

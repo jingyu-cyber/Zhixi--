@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import NavSidebar from "@/components/NavSidebar";
 import UserTopbar from "@/components/UserTopbar";
-import { OrganizerReport, organizerApi } from "@/lib/api";
+import { favoritesApi, compileApi, collectionApi, FavoriteFolder } from "@/lib/api";
 import { isActiveSession, useAuthSession } from "@/lib/session";
 
 function StatCard({ label, value }: { label: string; value: number }) {
@@ -22,20 +22,66 @@ function formatDuration(seconds?: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+interface VideoItem {
+  bvid: string;
+  title: string;
+  duration?: number;
+  owner?: string;
+  content_category?: string;
+  series_name?: string;
+  compiled?: boolean;
+  conceptCount?: number;
+  claimCount?: number;
+  segmentCount?: number;
+  knowledgeNodeCount?: number;
+}
+
+const SUBJECT_TAGS: Record<string, string[]> = {
+  "计算机/AI": ["ai", "llm", "大模型", "机器学习", "深度学习", "神经网络", "deepseek", "python", "java", "c++", "c语言", "golang", "c#", "php", "编程", "算法", "数据结构", "代码"],
+  "网络安全": ["安全", "ctf", "渗透", "kali", "sql注入", "web安全", "信息安全", "密码学", "misc", "隐写", "流量分析", "黑客"],
+  "通信/大唐杯": ["大唐杯", "5g", "ipv6", "ict", "通信", "基站", "云计算", "云模块", "hcia", "hcip", "hcie"],
+  "英语": ["英语", "单词", "语法", "听力", "口语", "雅思", "托福", "四六级", "大英赛", "国际音标"],
+  "数学": ["数学", "勾股", "建模", "微积分", "线代", "概率"],
+  "工具/效率": ["docker", "工具", "效率", "ppt", "知识库", "openclaw", "obsidian", "vscode", "git", "linux"],
+  "论文/科研": ["论文", "科研", "nature", "查重", "学术", "实验"],
+  "大学/竞赛": ["竞赛", "大创", "保研", "大学", "四级", "六级"],
+};
+
+function classifySubject(title: string): string[] {
+  const lower = title.toLowerCase();
+  const tags: string[] = [];
+  for (const [tag, keywords] of Object.entries(SUBJECT_TAGS)) {
+    if (keywords.some(kw => lower.includes(kw))) {
+      tags.push(tag);
+    }
+  }
+  return tags.length > 0 ? tags : ["其他"];
+}
+
+function classifyContentType(title: string): string {
+  const lower = title.toLowerCase();
+  if (/教程|实战|项目|从零|手把手|开发|搭建|案例|入门|基础/.test(lower)) return "教程实战";
+  if (/是什么|原理|理解|概念|本质|详解/.test(lower)) return "概念讲解";
+  if (/刷题|题解|习题|真题|练习/.test(lower)) return "刷题训练";
+  if (/经验|分享|心得|建议|避坑|规划|路线/.test(lower)) return "经验分享";
+  if (/资讯|新闻|解读|速递|更新|趋势/.test(lower)) return "资讯解读";
+  return "概念讲解";
+}
+
 export default function OrganizerPage() {
   const { sessionId, scopeKey } = useAuthSession();
-  const [report, setReport] = useState<OrganizerReport | null>(null);
+  const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [heartedList, setHeartedList] = useState<Set<string>>(new Set());
   const [subjectFilter, setSubjectFilter] = useState("全部");
   const [typeFilter, setTypeFilter] = useState("全部");
-  const [difficultyFilter, setDifficultyFilter] = useState("全部");
-  const [statusFilter, setStatusFilter] = useState("全部");
-  const [valueFilter, setValueFilter] = useState("全部");
   const [query, setQuery] = useState("");
+  const [error, setError] = useState("");
   const requestIdRef = useRef(0);
 
   useEffect(() => {
-    setReport(null);
+    setVideos([]);
+    setError("");
     setLoading(!!sessionId);
     if (!sessionId) {
       setLoading(false);
@@ -43,18 +89,81 @@ export default function OrganizerPage() {
     }
     const requestId = ++requestIdRef.current;
     const activeSessionId = sessionId;
-    organizerApi.getReport(sessionId)
-      .then((data) => {
+
+    // 加载收藏的视频（与工作台相同的数据源）
+    favoritesApi
+      .getList(sessionId)
+      .then(async (folders: FavoriteFolder[]) => {
+        if (requestIdRef.current !== requestId || !isActiveSession(activeSessionId)) return;
+
+        const allVideos: VideoItem[] = [];
+        const targetFolders = folders.filter((f) => f.is_selected || f.is_default);
+
+        for (const folder of targetFolders) {
+          try {
+            let page = 1;
+            let hasMore = true;
+            while (hasMore) {
+              const resp = await favoritesApi.getVideos(folder.media_id, sessionId, page);
+              for (const v of resp.videos) {
+                if (!allVideos.find((av) => av.bvid === v.bvid)) {
+                  allVideos.push({
+                    bvid: v.bvid,
+                    title: v.title,
+                    duration: v.duration,
+                    owner: v.owner,
+                    content_category: (v as any).content_category,
+                    series_name: (v as any).series_name,
+                  });
+                }
+              }
+              hasMore = resp.has_more;
+              page++;
+            }
+          } catch {
+            // 跳过加载失败的文件夹
+          }
+        }
+
+        if (requestIdRef.current !== requestId || !isActiveSession(activeSessionId)) return;
+
+        // 尝试获取编译状态（非阻塞）
+        const enriched = await Promise.all(
+          allVideos.slice(0, 50).map(async (video) => {
+            try {
+              const result = await compileApi.getResult(video.bvid);
+              return {
+                ...video,
+                compiled: true,
+                conceptCount: result.stats?.concept_count || 0,
+                claimCount: result.stats?.claim_count || 0,
+                segmentCount: result.stats?.segment_count || 0,
+                knowledgeNodeCount: result.stats?.concept_count || 0,
+              };
+            } catch {
+              return { ...video, compiled: false, conceptCount: 0, claimCount: 0, segmentCount: 0, knowledgeNodeCount: 0 };
+            }
+          })
+        );
+
         if (requestIdRef.current === requestId && isActiveSession(activeSessionId)) {
-          setReport(data);
+          setVideos(enriched);
         }
       })
-      .catch((error) => {
+      .catch((err) => {
         if (requestIdRef.current === requestId && isActiveSession(activeSessionId)) {
-          console.error("Failed to load organizer report:", error);
-          setReport(null);
+          setError(err?.message || "加载收藏夹失败");
+        }
+      });
+
+    // 加载爱心收藏
+    collectionApi.list(sessionId)
+      .then((list) => {
+        if (requestIdRef.current === requestId && isActiveSession(activeSessionId)) {
+          setHeartedList(new Set(list.map((v: any) => v.bvid)));
         }
       })
+      .catch(() => {})
       .finally(() => {
         if (requestIdRef.current === requestId && isActiveSession(activeSessionId)) {
           setLoading(false);
@@ -63,22 +172,30 @@ export default function OrganizerPage() {
   }, [sessionId, scopeKey]);
 
   const filteredVideos = useMemo(() => {
-    if (!report) return [];
-    return report.videos.filter((video) => {
-      if (subjectFilter !== "全部" && !video.subject_tags.includes(subjectFilter)) return false;
-      if (typeFilter !== "全部" && video.content_type !== typeFilter) return false;
-      if (difficultyFilter !== "全部" && video.difficulty_level !== difficultyFilter) return false;
-      if (statusFilter !== "全部" && video.learning_status !== statusFilter) return false;
-      if (valueFilter !== "全部" && video.value_tier !== valueFilter) return false;
+    return videos.filter((video) => {
+      const tags = classifySubject(video.title);
+      if (subjectFilter !== "全部" && !tags.includes(subjectFilter)) return false;
+      if (typeFilter !== "全部" && classifyContentType(video.title) !== typeFilter) return false;
       if (query.trim()) {
-        const haystack = `${video.title} ${video.subject_tags.join(" ")} ${video.folder_titles.join(" ")}`.toLowerCase();
+        const haystack = `${video.title} ${video.owner || ""} ${video.series_name || ""} ${tags.join(" ")}`.toLowerCase();
         if (!haystack.includes(query.trim().toLowerCase())) return false;
       }
       return true;
     });
-  }, [report, subjectFilter, typeFilter, difficultyFilter, statusFilter, valueFilter, query]);
+  }, [videos, subjectFilter, typeFilter, query]);
 
-  const facetOptions = report?.facet_counts;
+  const allSubjects = useMemo(() => {
+    const set = new Set<string>();
+    videos.forEach(v => classifySubject(v.title).forEach(t => set.add(t)));
+    return Array.from(set).sort();
+  }, [videos]);
+
+  const stats = useMemo(() => ({
+    total: videos.length,
+    compiled: videos.filter(v => v.compiled).length,
+    withConcepts: videos.filter(v => (v.conceptCount || 0) > 0).length,
+    hearted: heartedList.size,
+  }), [videos, heartedList]);
 
   return (
     <div className="app-shell">
@@ -109,173 +226,139 @@ export default function OrganizerPage() {
             <div className="organizer-hero">
               <div>
                 <h2>收藏整理分类中心</h2>
-                <p>自动分类、识别系列、发现重复内容，并给出学习与归档建议。</p>
+                <p>自动分类、识别系列，并给出学习建议。直接来自你的 B站收藏夹。</p>
               </div>
-              {sessionId && (
-                <div className="organizer-export-actions">
-                  <a className="btn btn-outline" href={organizerApi.getExportUrl(sessionId, "json")}>导出 JSON</a>
-                  <a className="btn btn-primary" href={organizerApi.getExportUrl(sessionId, "markdown")}>导出 Markdown</a>
-                </div>
-              )}
             </div>
 
-            {loading && <div className="loading-state">分析收藏中...</div>}
+            {loading && <div className="loading-state">加载收藏夹中...</div>}
             {!loading && !sessionId && <div className="tree-empty"><p>请先登录后查看整理中心。</p></div>}
+            {error && <div className="tree-empty"><p>{error}</p></div>}
 
-            {!loading && sessionId && report && (
+            {!loading && sessionId && (
               <>
                 <div className="organizer-stats-grid">
-                  <StatCard label="总视频" value={report.summary.total_videos} />
-                  <StatCard label="已识别系列" value={report.summary.series_count} />
-                  <StatCard label="重复组" value={report.summary.duplicate_group_count} />
-                  <StatCard label="主线核心" value={report.summary.core_count} />
-                  <StatCard label="低价值/噪声" value={report.summary.low_value_count} />
-                  <StatCard label="已编译" value={report.summary.compiled_count} />
+                  <StatCard label="总视频" value={stats.total} />
+                  <StatCard label="已编译" value={stats.compiled} />
+                  <StatCard label="含知识点" value={stats.withConcepts} />
+                  <StatCard label="❤️ 收藏" value={stats.hearted} />
                 </div>
 
                 <div className="organizer-filter-bar">
                   <input
-                    id="organizer-search"
-                    name="search"
                     className="input"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder="搜索标题 / 标签 / 收藏夹"
+                    placeholder="搜索标题 / UP主 / 标签"
                   />
-                  <select id="organizer-subject-filter" name="subject" className="tree-filter" value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)}>
+                  <select className="tree-filter" value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)}>
                     <option value="全部">全部主题</option>
-                    {Object.keys(facetOptions?.subject_tags || {}).map((item) => <option key={item} value={item}>{item}</option>)}
+                    {allSubjects.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
-                  <select id="organizer-type-filter" name="type" className="tree-filter" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+                  <select className="tree-filter" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
                     <option value="全部">全部类型</option>
-                    {Object.keys(facetOptions?.content_type || {}).map((item) => <option key={item} value={item}>{item}</option>)}
-                  </select>
-                  <select id="organizer-difficulty-filter" name="difficulty" className="tree-filter" value={difficultyFilter} onChange={(e) => setDifficultyFilter(e.target.value)}>
-                    <option value="全部">全部难度</option>
-                    {Object.keys(facetOptions?.difficulty_level || {}).map((item) => <option key={item} value={item}>{item}</option>)}
-                  </select>
-                  <select id="organizer-status-filter" name="status" className="tree-filter" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                    <option value="全部">全部学习状态</option>
-                    {Object.keys(facetOptions?.learning_status || {}).map((item) => <option key={item} value={item}>{item}</option>)}
-                  </select>
-                  <select id="organizer-value-filter" name="value" className="tree-filter" value={valueFilter} onChange={(e) => setValueFilter(e.target.value)}>
-                    <option value="全部">全部收藏价值</option>
-                    {Object.keys(facetOptions?.value_tier || {}).map((item) => <option key={item} value={item}>{item}</option>)}
+                    <option value="教程实战">教程实战</option>
+                    <option value="概念讲解">概念讲解</option>
+                    <option value="刷题训练">刷题训练</option>
+                    <option value="经验分享">经验分享</option>
+                    <option value="资讯解读">资讯解读</option>
                   </select>
                 </div>
 
+                {/* 视频列表 — 与工作台相同的数据源 */}
                 <div className="organizer-layout">
-                  <div className="organizer-main">
+                  <div className="organizer-main" style={{ maxWidth: "100%" }}>
+                    {/* 爱心收藏 */}
+                    {heartedList.size > 0 && (
+                      <section className="organizer-section" style={{ border: "1px solid #f59e0b", borderLeft: "3px solid #f59e0b" }}>
+                        <div className="organizer-section-head">
+                          <h3>❤️ 我的收藏</h3>
+                          <span>{heartedList.size} 项</span>
+                        </div>
+                        <div className="organizer-video-list">
+                          {videos.filter(v => heartedList.has(v.bvid)).map(v => (
+                            <div key={v.bvid} className="organizer-video-card" style={{ borderColor: "#fef3c7" }}>
+                              <div className="organizer-video-top">
+                                <div>
+                                  <div className="organizer-video-title">❤️ {v.title}</div>
+                                  <div className="organizer-video-meta">
+                                    {v.duration && <span>{formatDuration(v.duration)}</span>}
+                                    {v.compiled && <span style={{ color: "var(--primary)", fontWeight: 500 }}>{v.conceptCount || 0} 概念 · {v.claimCount || 0} 论断</span>}
+                                    {!v.compiled && <span style={{ color: "var(--text-tertiary)" }}>未编译</span>}
+                                  </div>
+                                </div>
+                                <div className="organizer-video-stats">
+                                  <a href={`https://www.bilibili.com/video/${v.bvid}`} target="_blank" className="organizer-chip" style={{ textDecoration: "none", fontSize: 12 }}>查看视频</a>
+                                  <a href="/workspace" style={{ textDecoration: "none" }}>
+                                    <span className="organizer-chip" style={{ fontSize: 12, background: "rgba(245,158,11,0.1)", color: "#c4781e" }}>{v.compiled ? "已编译" : "去编译"}</span>
+                                  </a>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    )}
+
+                    {/* 全量视频列表 */}
                     <section className="organizer-section">
                       <div className="organizer-section-head">
                         <h3>视频总览</h3>
                         <span>{filteredVideos.length} 项</span>
                       </div>
+                      {filteredVideos.length === 0 && !loading && (
+                        <div className="organizer-empty">没有匹配的视频，试试调整筛选条件</div>
+                      )}
                       <div className="organizer-video-list">
-                        {filteredVideos.map((video) => (
-                          <div key={video.bvid} className="organizer-video-card">
-                            <div className="organizer-video-top">
-                              <div>
-                                <div className="organizer-video-title">{video.title}</div>
-                                <div className="organizer-video-meta">
-                                  {video.owner_name && <span>UP: {video.owner_name}</span>}
-                                  <span>{formatDuration(video.duration)}</span>
-                                  <span>分数 {Math.round(video.organize_score)}</span>
-                                  <span>置信度 {Math.round(video.confidence * 100)}%</span>
-                                  {video.is_core && <span className="organizer-pill pill-core">核心节点</span>}
+                        {filteredVideos.map((video) => {
+                          const tags = classifySubject(video.title);
+                          const contentType = classifyContentType(video.title);
+                          return (
+                            <div key={video.bvid} className="organizer-video-card">
+                              <div className="organizer-video-top">
+                                <div>
+                                  <div className="organizer-video-title">
+                                    {heartedList.has(video.bvid) && "❤️ "}
+                                    {video.title}
+                                  </div>
+                                  <div className="organizer-video-meta">
+                                    {video.owner && <span>UP: {video.owner}</span>}
+                                    <span>{formatDuration(video.duration)}</span>
+                                    {video.compiled && (
+                                      <span style={{ color: "var(--primary)" }}>
+                                        {(video.conceptCount || 0) > 0 ? `${video.conceptCount} 知识点` : "已编译"}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
+                                <a className="btn btn-sm btn-outline" href={`https://www.bilibili.com/video/${video.bvid}`} target="_blank" rel="noopener noreferrer">
+                                  查看视频
+                                </a>
                               </div>
-                              <a className="btn btn-sm btn-outline" href={`https://www.bilibili.com/video/${video.bvid}`} target="_blank" rel="noopener noreferrer">
-                                查看视频
-                              </a>
-                            </div>
-                            <div className="organizer-tag-row">
-                              {video.subject_tags.map((tag) => <span key={tag} className="organizer-chip">{tag}</span>)}
-                              <span className="organizer-chip organizer-chip-ghost">{video.content_type}</span>
-                              <span className="organizer-chip organizer-chip-ghost">{video.difficulty_level}</span>
-                              <span className="organizer-chip organizer-chip-ghost">{video.learning_status}</span>
-                              <span className={`organizer-chip ${video.value_tier === "主线核心" ? "chip-core" : video.value_tier === "低价值/噪声" ? "chip-low" : ""}`}>{video.value_tier}</span>
-                            </div>
-                            <div className="organizer-video-stats">
-                              <span>{video.knowledge_node_count} 知识点</span>
-                              <span>{video.claim_count} 论断</span>
-                              <span>{video.segment_count} 片段</span>
-                              <span>{video.folder_titles.join(" / ") || "未归组"}</span>
-                            </div>
-                            <div className="organizer-reason-list">
-                              {video.reasons.slice(0, 4).map((reason) => <span key={reason} className="organizer-reason">{reason}</span>)}
-                            </div>
-                            {video.duplicate_candidates.length > 0 && (
-                              <div className="organizer-inline-note low">
-                                存在相似收藏，建议人工确认是否归档。
+                              <div className="organizer-tag-row">
+                                {tags.map(tag => (
+                                  <span key={tag} className={`organizer-chip ${tag === "其他" ? "organizer-chip-ghost" : ""}`}>{tag}</span>
+                                ))}
+                                <span className="organizer-chip organizer-chip-ghost">{contentType}</span>
+                                {video.content_category && (
+                                  <span className="organizer-chip organizer-chip-ghost">{video.content_category}</span>
+                                )}
+                                {video.series_name && (
+                                  <span className="organizer-chip" style={{ background: "rgba(var(--primary-rgb,99,102,241),0.12)" }}>📚 {video.series_name}</span>
+                                )}
                               </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                  </div>
-
-                  <div className="organizer-side">
-                    <section className="organizer-section">
-                      <div className="organizer-section-head">
-                        <h3>系列聚合</h3>
-                        <span>{report.series_groups.length}</span>
-                      </div>
-                      <div className="organizer-stack">
-                        {report.series_groups.length === 0 && <div className="organizer-empty">暂无明显系列内容</div>}
-                        {report.series_groups.map((group) => (
-                          <div key={group.series_key} className="organizer-side-card">
-                            <div className="organizer-side-title">{group.series_name}</div>
-                            <div className="organizer-side-meta">{group.video_count} 个视频 · 覆盖分 {Math.round(group.coverage_score)}</div>
-                            <div className="organizer-reason-list">
-                              {group.reasons.map((reason) => <span key={reason} className="organizer-reason">{reason}</span>)}
+                              <div className="organizer-video-stats">
+                                {video.compiled && (
+                                  <>
+                                    <span>{video.conceptCount || 0} 概念</span>
+                                    <span>{video.claimCount || 0} 论断</span>
+                                    <span>{video.segmentCount || 0} 片段</span>
+                                  </>
+                                )}
+                                {!video.compiled && <span style={{ color: "var(--text-tertiary)" }}>未编译 — 前往工作台编译</span>}
+                              </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-
-                    <section className="organizer-section">
-                      <div className="organizer-section-head">
-                        <h3>重复内容识别</h3>
-                        <span>{report.duplicate_groups.length}</span>
-                      </div>
-                      <div className="organizer-stack">
-                        {report.duplicate_groups.length === 0 && <div className="organizer-empty">暂无高相似重复组</div>}
-                        {report.duplicate_groups.map((group) => (
-                          <div key={group.group_id} className="organizer-side-card">
-                            <div className="organizer-side-title">{group.group_id}</div>
-                            <div className="organizer-side-meta">建议保留 {group.recommended_keep_bvid}</div>
-                            <div className="organizer-dup-list">
-                              {group.items.map((item) => (
-                                <div key={item.bvid} className="organizer-dup-item">
-                                  <span>{item.title}</span>
-                                  <strong>{Math.round(item.similarity * 100)}%</strong>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-
-                    <section className="organizer-section">
-                      <div className="organizer-section-head">
-                        <h3>整理建议</h3>
-                        <span>{report.suggestions.length}</span>
-                      </div>
-                      <div className="organizer-stack">
-                        {report.suggestions.map((item) => (
-                          <div key={`${item.type}-${item.title}`} className="organizer-side-card">
-                            <div className="organizer-side-title">{item.title}</div>
-                            <div className="organizer-side-meta">置信度 {Math.round(item.confidence * 100)}%</div>
-                            <p className="organizer-side-desc">{item.description}</p>
-                            <div className="organizer-reason-list">
-                              {item.evidence.map((ev) => <span key={ev} className="organizer-reason">{ev}</span>)}
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </section>
                   </div>

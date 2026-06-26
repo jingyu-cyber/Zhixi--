@@ -64,8 +64,8 @@ def _is_noise_name(name: str) -> bool:
 
 def _compute_grade(node: dict) -> str:
     """计算节点质量等级"""
-    confidence = node.get("confidence", 0)
-    source_count = node.get("source_count", 1)
+    confidence = node.get("confidence") or 0
+    source_count = node.get("source_count") or 1
 
     if confidence >= 0.7 and source_count >= 2:
         return GRADE_CORE
@@ -108,7 +108,7 @@ class TreeBuilder:
         for n in all_nodes:
             if n.get("review_status") == "rejected":
                 continue
-            if n.get("confidence", 0) < threshold:
+            if (n.get("confidence") or 0) < threshold:
                 continue
             if _is_noise_name(n.get("name", "")):
                 noise_count += 1
@@ -153,8 +153,8 @@ class TreeBuilder:
                     if key not in seen_orphan_names or orphan.get("source_count", 0) > seen_orphan_names[key].get("source_count", 0):
                         seen_orphan_names[key] = orphan
                 for orphan in sorted(seen_orphan_names.values(),
-                                     key=lambda n: (self._grade_sort_key(n), n.get("difficulty", 1),
-                                                    -n.get("source_count", 0), n.get("name", ""))):
+                                     key=lambda n: (self._grade_sort_key(n), n.get("difficulty") or 1,
+                                                    -(n.get("source_count") or 0), n.get("name", ""))):
                     orphan_children.append(self._make_tree_node(orphan, []))
                 tree.append({
                     "id": -1,
@@ -176,7 +176,7 @@ class TreeBuilder:
         # 统计
         total_nodes = len(qualified)
         low_conf = sum(1 for n in all_nodes
-                       if n.get("confidence", 0) < threshold
+                       if (n.get("confidence") or 0) < threshold
                        and n.get("review_status") != "rejected")
         core_count = sum(1 for n in qualified if n.get("_grade") == GRADE_CORE)
 
@@ -289,7 +289,7 @@ class TreeBuilder:
 
         # 排序：核心优先 → 难度 → 来源数
         children.sort(key=lambda c: (self._grade_sort_key_from_tree(c),
-                                     c["difficulty"], -c.get("node_count", 0), c["name"]))
+                                     c.get("difficulty") or 1, -(c.get("node_count") or 0), c.get("name", "")))
         return children
 
     def _make_tree_node(self, node: dict, children: list[dict], is_reference: bool = False) -> dict:

@@ -287,24 +287,24 @@ class GraphStore:
         nodes_result = await db.execute(node_query)
         for node in nodes_result.scalars().all():
             self.graph.add_node(node.id, **{
-                "node_type": node.node_type,
-                "name": node.name,
-                "normalized_name": node.normalized_name,
+                "node_type": node.node_type or "concept",
+                "name": node.name or "",
+                "normalized_name": node.normalized_name or "",
                 "aliases": node.aliases or [],
-                "definition": node.definition,
-                "difficulty": node.difficulty,
+                "definition": node.definition or "",
+                "difficulty": node.difficulty if node.difficulty is not None else 1,
                 "main_topic_id": node.main_topic_id,
-                "confidence": node.confidence,
-                "source_count": node.source_count,
-                "review_status": node.review_status,
+                "confidence": node.confidence if node.confidence is not None else 0.5,
+                "source_count": node.source_count if node.source_count is not None else 1,
+                "review_status": node.review_status or "auto",
             })
 
         edges_result = await db.execute(edge_query)
         for edge in edges_result.scalars().all():
             self.graph.add_edge(edge.source_node_id, edge.target_node_id, **{
-                "relation_type": edge.relation_type,
-                "weight": edge.weight,
-                "confidence": edge.confidence,
+                "relation_type": edge.relation_type or "related_to",
+                "weight": edge.weight if edge.weight is not None else 1.0,
+                "confidence": edge.confidence if edge.confidence is not None else 0.5,
                 "evidence_segment_id": edge.evidence_segment_id,
                 "evidence_video_bvid": edge.evidence_video_bvid,
                 "edge_id": edge.id,

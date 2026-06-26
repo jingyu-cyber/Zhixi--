@@ -12,7 +12,7 @@ export default function NavSidebar() {
     { href: "/search", label: "搜索", icon: "search", primary: true },
     { href: "/agent", label: "知识智能体", icon: "chat", primary: true },
     { href: "/learning-path", label: "学习路径", icon: "learning", primary: false },
-    { href: "/organizer", label: "整理中心", icon: "organizer", primary: false },
+    { href: "/organizer", label: "收藏整理中心", icon: "organizer", primary: false },
     { href: "/game", label: "知识对战", icon: "game", primary: false },
     { href: "/memory", label: "记忆", icon: "memory", primary: false },
     { href: "/review", label: "复习", icon: "review", primary: false },

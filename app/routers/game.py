@@ -34,15 +34,19 @@ VALID_RELATIONS = [
     "explains",
     "supports",
     "recommends_next",
+    "co_occurrence",
+    "belongs_to",
 ]
 
 RELATION_LABELS = {
     "prerequisite_of": "前置知识",
     "part_of": "属于/包含",
-    "related_to": "相关",
+    "related_to": "相关概念",
     "explains": "解释说明",
     "supports": "支撑论证",
     "recommends_next": "推荐下一步",
+    "co_occurrence": "共同出现",
+    "belongs_to": "属于主题",
     "无关系": "无关系",
 }
 

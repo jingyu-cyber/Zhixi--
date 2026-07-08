@@ -11,6 +11,7 @@ from openai import AsyncOpenAI
 
 from app.config import settings
 from app.models import NodeType, RelationType
+from app.services.llm_provider import get_model_name
 
 
 EXTRACTION_PROMPT = """你是知识抽取专家。从以下视频文本片段中抽取知识实体和关系。
@@ -96,10 +97,12 @@ class KnowledgeExtractor:
 
     def __init__(self):
         self.client = None
-        if settings.openai_api_key:
+        from app.services.llm_provider import get_llm_config
+        api_key, base_url, _model = get_llm_config()
+        if api_key:
             self.client = AsyncOpenAI(
-                api_key=settings.openai_api_key,
-                base_url=settings.openai_base_url,
+                api_key=api_key,
+                base_url=base_url,
             )
         self.min_confidence = settings.extraction_min_confidence
 
@@ -176,7 +179,7 @@ class KnowledgeExtractor:
         for attempt in range(2):  # 最多重试 1 次
             try:
                 response = await self.client.chat.completions.create(
-                    model=settings.llm_model,
+                    model=get_model_name(),
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1,
                     max_tokens=2000,

@@ -24,6 +24,7 @@ from app.models import (
 from app.services.extractor import (
     NOISE_EN_WORDS, NOISE_ZH_WORDS, OVERLY_BROAD,
 )
+from app.services.llm_provider import get_model_name
 
 
 # ==================== LLM 客户端 ====================
@@ -33,11 +34,14 @@ _client: Optional[AsyncOpenAI] = None
 
 def _get_client() -> Optional[AsyncOpenAI]:
     global _client
-    if _client is None and settings.openai_api_key:
-        _client = AsyncOpenAI(
-            api_key=settings.openai_api_key,
-            base_url=settings.openai_base_url,
-        )
+    if _client is None:
+        from app.services.llm_provider import get_llm_config
+        api_key, base_url, _model = get_llm_config()
+        if api_key:
+            _client = AsyncOpenAI(
+                api_key=api_key,
+                base_url=base_url,
+            )
     return _client
 
 
@@ -280,7 +284,7 @@ async def _compile_segment(
     for attempt in range(2):  # 最多重试 1 次
         try:
             response = await client.chat.completions.create(
-                model=settings.llm_model,
+                model=get_model_name(),
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=2000,

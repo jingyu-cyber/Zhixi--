@@ -441,9 +441,11 @@ async def _generate_ai_path(
     session_id: Optional[str] = None,
 ) -> dict:
     """用 LLM 从视频片段内容编排学习路径"""
+    from app.services.llm_provider import get_llm_config, get_model_name
+    api_key, base_url, _model = get_llm_config()
     client = AsyncOpenAI(
-        api_key=settings.openai_api_key,
-        base_url=settings.openai_base_url,
+        api_key=api_key,
+        base_url=base_url,
     )
 
     content_summary = "\n\n".join([
@@ -485,7 +487,7 @@ difficulty 范围 1-5。related_video_index 为最相关视频片段索引（-1=
 
     try:
         response = await client.chat.completions.create(
-            model=settings.llm_model,
+            model=get_model_name(),
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2, max_tokens=2000, timeout=60,
         )
@@ -518,9 +520,11 @@ difficulty 范围 1-5。related_video_index 为最相关视频片段索引（-1=
 
 async def _generate_conceptual_path(topic: str, mode: str) -> dict:
     """无编译数据时，AI 生成概念性学习路径"""
+    from app.services.llm_provider import get_llm_config, get_model_name
+    api_key, base_url, _model = get_llm_config()
     client = AsyncOpenAI(
-        api_key=settings.openai_api_key,
-        base_url=settings.openai_base_url,
+        api_key=api_key,
+        base_url=base_url,
     )
 
     mode_labels = {
@@ -557,7 +561,7 @@ async def _generate_conceptual_path(topic: str, mode: str) -> dict:
 
     try:
         response = await client.chat.completions.create(
-            model=settings.llm_model,
+            model=get_model_name(),
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3, max_tokens=2000, timeout=60,
         )

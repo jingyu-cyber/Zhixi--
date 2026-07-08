@@ -119,12 +119,15 @@ class MemoryConsolidator:
 
     def __init__(self, memory_store: "MemoryStore"):
         from app.services.memory.store import MemoryStore
+        from app.services.llm_provider import get_llm_config, get_model_name
         self.store: MemoryStore = memory_store
         self.client: Optional[AsyncOpenAI] = None
-        if settings.openai_api_key:
+        api_key, base_url, model = get_llm_config()
+        self._model_name = model
+        if api_key:
             self.client = AsyncOpenAI(
-                api_key=settings.openai_api_key,
-                base_url=settings.openai_base_url,
+                api_key=api_key,
+                base_url=base_url,
             )
 
     def fast_similarity(self, node_a: dict, node_b: dict) -> float:
@@ -172,7 +175,7 @@ class MemoryConsolidator:
                 content_b=node_b.get("content", node_b.get("definition", "")),
             )
             response = await self.client.chat.completions.create(
-                model=settings.llm_model,
+                model=self._model_name,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=500,
@@ -202,7 +205,7 @@ class MemoryConsolidator:
                 new_content=new_node.get("content", new_node.get("definition", "")),
             )
             response = await self.client.chat.completions.create(
-                model=settings.llm_model,
+                model=self._model_name,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=500,

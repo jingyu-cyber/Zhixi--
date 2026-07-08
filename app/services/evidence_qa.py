@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from openai import OpenAI, AsyncOpenAI
 
 from app.config import settings
+from app.services.llm_provider import get_model_name
 from app.models import Concept, Claim, Segment, VideoCache, _fmt_time
 from app.services.rag import RAGService
 
@@ -232,16 +233,20 @@ async def _get_claims_for_concepts(
 # =====================================================================
 
 def _get_llm_client() -> OpenAI:
+    from app.services.llm_provider import get_llm_config
+    api_key, base_url, _model = get_llm_config()
     return OpenAI(
-        api_key=settings.openai_api_key,
-        base_url=settings.openai_base_url,
+        api_key=api_key,
+        base_url=base_url,
     )
 
 
 def _get_async_llm_client() -> AsyncOpenAI:
+    from app.services.llm_provider import get_llm_config
+    api_key, base_url, _model = get_llm_config()
     return AsyncOpenAI(
-        api_key=settings.openai_api_key,
-        base_url=settings.openai_base_url,
+        api_key=api_key,
+        base_url=base_url,
     )
 
 
@@ -333,7 +338,7 @@ async def ask_with_evidence(
     # 调用 LLM
     client = _get_llm_client()
     response = client.chat.completions.create(
-        model=settings.llm_model,
+        model=get_model_name(),
         messages=messages,
         temperature=0.5,
     )
@@ -377,7 +382,7 @@ async def ask_with_evidence_stream(
 
     def generate():
         stream = client.chat.completions.create(
-            model=settings.llm_model,
+            model=get_model_name(),
             messages=messages,
             temperature=0.5,
             stream=True,

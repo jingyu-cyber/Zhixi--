@@ -22,6 +22,7 @@ from app.models import (
 )
 from app.config import settings
 from app.routers.knowledge import get_rag_service, get_graph
+from app.services.llm_provider import get_model_name
 from app.services.query_router import QueryRouter
 from app.services.graph_rag import GraphRAGService
 
@@ -56,12 +57,14 @@ async def _load_request_graph(db: AsyncSession, session_id: Optional[str]) -> "G
     return graph
 
 def _get_llm_client() -> OpenAI:
-    """获取 LLM 客户端"""
-    if not settings.openai_api_key:
+    """获取 LLM 客户端 — 通过 llm_provider 调度（支持 DashScope / 讯飞星火）。"""
+    from app.services.llm_provider import get_llm_config
+    api_key, base_url, _model = get_llm_config()
+    if not api_key:
         raise HTTPException(status_code=400, detail="未配置 LLM API Key")
     return OpenAI(
-        api_key=settings.openai_api_key,
-        base_url=settings.openai_base_url,
+        api_key=api_key,
+        base_url=base_url,
     )
 
 def _build_overview_messages(context: str, question: str) -> list[dict]:
@@ -325,7 +328,7 @@ def _route_with_llm(question: str) -> tuple[Optional[str], str]:
             "只输出一个词，不要解释。"
         )
         resp = client.chat.completions.create(
-            model=settings.llm_model,
+            model=get_model_name(),
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": question},
@@ -868,7 +871,7 @@ async def ask_question(request: ChatRequest, db: AsyncSession = Depends(get_db))
             messages = history + messages
 
         client = _get_llm_client()
-        response = client.chat.completions.create(model=settings.llm_model, messages=messages, temperature=0.5)
+        response = client.chat.completions.create(model=get_model_name(), messages=messages, temperature=0.5)
         answer = response.choices[0].message.content or ""
 
         # 持久化消息
@@ -909,7 +912,7 @@ async def ask_question_stream(request: ChatRequest, db: AsyncSession = Depends(g
         full_answer_chunks: list[str] = []
 
         async def generate():
-            stream = client.chat.completions.create(model=settings.llm_model, messages=messages, temperature=0.5, stream=True)
+            stream = client.chat.completions.create(model=get_model_name(), messages=messages, temperature=0.5, stream=True)
             for chunk in stream:
                 delta = chunk.choices[0].delta
                 if delta and delta.content:

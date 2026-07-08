@@ -140,13 +140,15 @@ class GraphRAGService:
 
     async def _generate_summaries(self) -> int:
         """为每个社区生成 LLM 摘要"""
-        if not settings.openai_api_key:
+        from app.services.llm_provider import get_llm_config, get_model_name
+        api_key, base_url, _model = get_llm_config()
+        if not api_key:
             logger.info("未配置 API Key，跳过社区摘要生成")
             return 0
 
         client = AsyncOpenAI(
-            api_key=settings.openai_api_key,
-            base_url=settings.openai_base_url,
+            api_key=api_key,
+            base_url=base_url,
         )
 
         generated = 0
@@ -170,7 +172,7 @@ class GraphRAGService:
 
             try:
                 resp = await client.chat.completions.create(
-                    model=settings.llm_model,
+                    model=get_model_name(),
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.3,
                     max_tokens=200,

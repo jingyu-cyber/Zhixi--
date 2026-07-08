@@ -83,11 +83,14 @@ class RAGService:
             chroma_kwargs["embedding_function"] = self.embeddings
         self.vectorstore = Chroma(**chroma_kwargs)
         
-        # 初始化 LLM
+        # 初始化 LLM — 走统一 Provider（支持 DashScope / 星火切换）
+        # 注意：Embedding 层仍走 DashScope（星火暂不支持兼容的 Embedding API）
+        from app.services.llm_provider import get_llm_config
+        llm_api_key, llm_base_url, llm_model = get_llm_config()
         self.llm = ChatOpenAI(
-            api_key=settings.openai_api_key,
-            base_url=settings.openai_base_url,
-            model=settings.llm_model,
+            api_key=llm_api_key,
+            base_url=llm_base_url,
+            model=llm_model,
             temperature=0.5
         )
         
@@ -303,9 +306,11 @@ class RAGService:
         """使用 LLM 对召回文档进行相关性重排序"""
         try:
             from openai import OpenAI
+            from app.services.llm_provider import get_llm_config, get_model_name
+            llm_api_key, llm_base_url, _model = get_llm_config()
             client = OpenAI(
-                api_key=settings.openai_api_key,
-                base_url=settings.openai_base_url,
+                api_key=llm_api_key,
+                base_url=llm_base_url,
             )
 
             # 构建评分请求
@@ -323,7 +328,7 @@ class RAGService:
             )
 
             resp = client.chat.completions.create(
-                model=settings.llm_model,
+                model=get_model_name(),
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0,
                 max_tokens=100,

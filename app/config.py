@@ -12,7 +12,10 @@ import os
 class Settings(BaseSettings):
     """应用配置"""
 
-    # OpenAI / LLM 配置
+    # LLM Provider 选择
+    llm_provider: str = Field(default="dashscope", env="LLM_PROVIDER")  # dashscope | spark
+
+    # DashScope / OpenAI 兼容 LLM 配置
     openai_api_key: str = Field(
         default="",
         validation_alias=AliasChoices("DASHSCOPE_API_KEY", "OPENAI_API_KEY"),
@@ -20,6 +23,14 @@ class Settings(BaseSettings):
     openai_base_url: str = Field(default="https://api.openai.com/v1", env="OPENAI_BASE_URL")
     llm_model: str = Field(default="gpt-4-turbo", env="LLM_MODEL")
     embedding_model: str = Field(default="text-embedding-3-small", env="EMBEDDING_MODEL")
+
+    # 讯飞星火 Spark 配置
+    spark_api_key: str = Field(default="", env="SPARK_API_KEY")          # APIpassword 或 ak:sk
+    spark_base_url: str = Field(                                         # HTTP OpenAI兼容端点
+        default="https://spark-api-open.xf-yun.com/v2",
+        env="SPARK_BASE_URL"
+    )
+    spark_model: str = Field(default="spark-x", env="SPARK_MODEL")      # spark-x / 4.0Ultra
 
     # DashScope ASR
     dashscope_base_url: str = Field(

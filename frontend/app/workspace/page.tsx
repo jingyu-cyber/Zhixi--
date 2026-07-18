@@ -421,6 +421,10 @@ export default function WorkspacePage() {
     { key: "map", label: "知识图" },
     { key: "claims", label: "论断" },
   ];
+  const selectedVideo = videos.find(v => v.bvid === selectedBvid);
+  const selectedPage = selectedBvid && selectedCid
+    ? (coursePages[selectedBvid] || []).find(page => page.cid === selectedCid)
+    : undefined;
 
   return (
     <div className="app-shell">
@@ -779,7 +783,12 @@ export default function WorkspacePage() {
                   <>
                     {activeTab === "video" && selectedBvid && (
                       <div style={{ padding: 16 }}>
-                        <VideoPlayer bvid={selectedBvid} title={videos.find(v => v.bvid === selectedBvid)?.title} />
+                        <VideoPlayer
+                          bvid={selectedBvid}
+                          title={selectedPage?.part || selectedVideo?.title}
+                          cid={selectedCid}
+                          page={selectedPage?.page}
+                        />
                       </div>
                     )}
                     {activeTab === "map" && (

@@ -5,12 +5,22 @@ import { useState, useCallback, useEffect } from "react";
 interface VideoPlayerProps {
   bvid: string;
   title?: string;
+  cid?: number | null;
+  page?: number | null;
 }
 
-export default function VideoPlayer({ bvid, title }: VideoPlayerProps) {
+export default function VideoPlayer({ bvid, title, cid, page }: VideoPlayerProps) {
   const [expanded, setExpanded] = useState(false);
 
-  const playerUrl = `https://player.bilibili.com/player.html?bvid=${bvid}&page=1&high_quality=1&autoplay=0&danmaku=0`;
+  const params = new URLSearchParams({
+    bvid,
+    page: String(page || 1),
+    high_quality: "1",
+    autoplay: "0",
+    danmaku: "0",
+  });
+  if (cid) params.set("cid", String(cid));
+  const playerUrl = `https://player.bilibili.com/player.html?${params.toString()}`;
 
   const toggleFullscreen = useCallback(() => {
     setExpanded((prev) => !prev);

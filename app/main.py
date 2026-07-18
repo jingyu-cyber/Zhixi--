@@ -32,6 +32,7 @@ from app.routers import organizer
 from app.routers import tts
 from app.routers import memory
 from app.routers import agent  # Jingyu: 知识智能体
+from app.routers import profile  # Jingyu: 学生画像
 
 
 # 配置日志
@@ -118,6 +119,7 @@ app.include_router(organizer.router)
 app.include_router(tts.router)
 app.include_router(memory.router)
 app.include_router(agent.router)   # Jingyu: 知识智能体
+app.include_router(profile.router)  # Jingyu: 学生画像
 
 
 @app.get("/")

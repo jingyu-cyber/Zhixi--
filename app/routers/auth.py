@@ -3,7 +3,7 @@ BiliMind 知识树导航系统
 
 认证路由 - 处理 B站登录
 """
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -221,6 +221,115 @@ async def logout(session_id: str):
             await db.commit()
     
     return {"message": "已退出登录"}
+
+
+@router.get("/restore-state")
+async def restore_user_state(
+    session_id: str = Query(..., description="会话ID"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    用户登录后恢复历史状态
+
+    返回该用户所有已编译视频、收藏视频、记忆节点统计等，
+    前端调用此接口恢复用户的知识库状态。
+    """
+    from app.utils import resolve_owner_mid
+    from app.models import (
+        VideoCache, UserCollection, Concept, Claim,
+        KnowledgeNode, KnowledgeEdge, MemoryNode,
+        FavoriteFolder, FavoriteVideo,
+    )
+    from sqlalchemy import func
+
+    owner_mid = await resolve_owner_mid(db, session_id)
+    if owner_mid is None and not session_id.startswith("demo_"):
+        raise HTTPException(status_code=401, detail="会话无效")
+
+    # 1. 已编译视频列表
+    vc_query = select(VideoCache)
+    if owner_mid is not None and owner_mid != 0:
+        vc_query = vc_query.where(VideoCache.data_owner_mid == owner_mid)
+    elif owner_mid == 0:
+        vc_query = vc_query.where(VideoCache.data_owner_mid == 0)
+    vc_result = await db.execute(vc_query.order_by(VideoCache.updated_at.desc()))
+    compiled_videos = []
+    for vc in vc_result.scalars().all():
+        compiled_videos.append({
+            "bvid": vc.bvid,
+            "title": vc.title,
+            "duration": vc.duration,
+            "owner_name": vc.owner_name,
+            "pic_url": vc.pic_url,
+            "extraction_status": vc.extraction_status,
+            "knowledge_node_count": vc.knowledge_node_count,
+            "content_category": getattr(vc, "content_category", None),
+            "is_processed": vc.is_processed,
+            "updated_at": str(vc.updated_at) if vc.updated_at else None,
+        })
+
+    # 2. 收藏视频列表
+    coll_query = select(UserCollection)
+    if owner_mid is not None:
+        coll_query = coll_query.where(UserCollection.owner_mid == owner_mid)
+    coll_result = await db.execute(coll_query)
+    collections = [
+        {"bvid": r.bvid, "title": r.title, "created_at": str(r.created_at)}
+        for r in coll_result.scalars().all()
+    ]
+
+    # 3. 知识节点统计
+    kn_count = 0
+    if owner_mid is not None:
+        kn_count = await db.scalar(
+            select(func.count()).select_from(KnowledgeNode).where(
+                KnowledgeNode.owner_mid == owner_mid
+            )
+        ) or 0
+    else:
+        kn_count = await db.scalar(
+            select(func.count()).select_from(KnowledgeNode)
+        ) or 0
+
+    # 4. 概念统计
+    concept_count = 0
+    if owner_mid is not None:
+        concept_count = await db.scalar(
+            select(func.count()).select_from(Concept).where(
+                Concept.owner_mid == owner_mid
+            )
+        ) or 0
+
+    # 5. 记忆节点统计
+    mem_count = 0
+    if owner_mid is not None:
+        mem_count = await db.scalar(
+            select(func.count()).select_from(MemoryNode).where(
+                MemoryNode.owner_mid == owner_mid
+            )
+        ) or 0
+
+    # 6. 收藏夹列表 (FavoriteFolder 无 owner_mid，按 session_id 隔离)
+    ff_query = select(FavoriteFolder).where(
+        FavoriteFolder.session_id == session_id
+    )
+    ff_result = await db.execute(ff_query)
+    folders = [
+        {"media_id": f.media_id, "title": f.title, "media_count": f.media_count}
+        for f in ff_result.scalars().all()
+    ]
+
+    return {
+        "compiled_videos": compiled_videos,
+        "total_compiled": len(compiled_videos),
+        "collections": collections,
+        "total_collections": len(collections),
+        "knowledge_node_count": kn_count,
+        "concept_count": concept_count,
+        "memory_node_count": mem_count,
+        "folders": folders,
+        "owner_mid": owner_mid,
+    }
 
 
 @router.post("/demo")

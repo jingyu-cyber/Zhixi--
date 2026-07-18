@@ -21,7 +21,8 @@ async def _get_session_graph(db: AsyncSession, session_id: Optional[str]) -> Gra
     from app.utils import resolve_owner_mid as _resolve_owner_mid
     owner_mid = await _resolve_owner_mid(db, session_id)
     graph = GraphStore(graph_path=settings.graph_persist_path)
-    await graph.load_from_db(db, session_id=None, owner_mid=owner_mid)
+    # 知识对战只基于收藏视频
+    await graph.load_from_db_favorites_only(db, owner_mid=owner_mid, session_id=session_id)
     return graph
 
 

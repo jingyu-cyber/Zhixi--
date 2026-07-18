@@ -24,6 +24,7 @@ from app.services import evidence_qa
 from app.services.graph_store import GraphStore
 from app.services.path_recommender import PathRecommender
 from app.services.llm_provider import get_model_name
+from app.services.content_guard import filter_response
 
 MAX_STEPS = 6  # 工具调用轮数上限，防止失控
 
@@ -278,6 +279,8 @@ class KnowledgeAgent:
                     answer = ("回答被截断或被内容策略拦截，请换个问法。"
                               if fr in ("length", "content_filter")
                               else "未能生成回答，请换个问法或稍后再试。")
+                if answer:
+                    answer = filter_response(answer)
                 return {"answer": answer, "steps": steps, "citations": self.citations}
 
             messages.append({
@@ -311,4 +314,6 @@ class KnowledgeAgent:
             tool_choice="none", temperature=0.3,
         )
         answer = (resp.choices[0].message.content or "").strip() or "已检索到部分信息，但未能生成最终回答，请重试。"
+        if answer:
+            answer = filter_response(answer)
         return {"answer": answer, "steps": steps, "citations": self.citations}

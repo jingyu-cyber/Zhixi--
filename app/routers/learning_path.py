@@ -19,11 +19,10 @@ from openai import AsyncOpenAI
 
 from app.database import get_db
 from app.models import KnowledgeNode, NodeSegmentLink, Segment, VideoCache, _fmt_time
-from app.utils import resolve_owner_mid as _resolve_owner_mid  # Jingyu: 模块级导入
+from app.utils import resolve_owner_mid as _resolve_owner_mid
 from app.config import settings
 from app.services.graph_store import GraphStore
 from app.services.path_recommender import PathRecommender
-from app.utils import resolve_owner_mid as _resolve_owner_mid
 
 router = APIRouter(prefix="/learning-path", tags=["学习路径"])
 
@@ -44,11 +43,12 @@ def _is_shared_session(session_id: Optional[str]) -> bool:
 
 
 async def _load_graph_store(db: AsyncSession, session_id: Optional[str]) -> GraphStore:
-    """按 owner_mid 加载隔离后的图谱快照，避免跨用户缓存。"""
+    """按 owner_mid 加载收藏视频的图谱快照（学习路径只基于收藏视频）。"""
     from app.utils import resolve_owner_mid as _resolve_owner_mid
     owner_mid = await _resolve_owner_mid(db, session_id)
     graph = GraphStore(graph_path=settings.graph_persist_path)
-    await graph.load_from_db(db, session_id=session_id, owner_mid=owner_mid)
+    # 学习路径只基于收藏视频
+    await graph.load_from_db_favorites_only(db, owner_mid=owner_mid, session_id=session_id)
     return graph
 
 

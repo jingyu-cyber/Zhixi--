@@ -25,6 +25,7 @@ from app.routers.knowledge import get_rag_service, get_graph
 from app.services.llm_provider import get_model_name
 from app.services.query_router import QueryRouter
 from app.services.graph_rag import GraphRAGService
+from app.services.content_guard import filter_response
 
 router = APIRouter(prefix="/chat", tags=["对话"])
 
@@ -920,6 +921,8 @@ async def ask_question_stream(request: ChatRequest, db: AsyncSession = Depends(g
                     yield delta.content
             # 流结束后保存 assistant 消息
             full_answer = "".join(full_answer_chunks)
+            # 内容安全过滤
+            full_answer = filter_response(full_answer)
             if final_conv_id and full_answer:
                 try:
                     await _save_message(db, final_conv_id, "assistant", full_answer, sources[:5])

@@ -323,6 +323,115 @@ class GraphStore:
         logger.info(f"Graph loaded from DB: {self.graph.number_of_nodes()} nodes, {self.graph.number_of_edges()} edges"
                     f" (owner_mid={owner_mid}, session_id={'set' if session_id else 'none'})")
 
+    async def load_from_db_favorites_only(
+        self, db: AsyncSession, owner_mid: Optional[int] = None,
+        session_id: Optional[str] = None,
+    ) -> None:
+        """只加载收藏视频关联的知识节点和边（用于知识树/游戏/学习路径/复习）
+
+        先查 UserCollection 获取收藏的 bvid 列表，
+        再通过 KnowledgeEdge.evidence_video_bvid 和 NodeSegmentLink.video_bvid
+        双重路径过滤出只属于这些视频的知识节点。
+        如果用户无收藏或 owner_mid 为 None，返回空图。
+        """
+        if self.graph is None:
+            return
+        self.graph.clear()
+
+        if owner_mid is None:
+            logger.info("Graph (favorites): owner_mid is None, returning empty graph")
+            return
+
+        # 1. 获取收藏的视频 bvid 列表
+        from app.models import UserCollection
+        result = await db.execute(
+            select(UserCollection.bvid).where(UserCollection.owner_mid == owner_mid)
+        )
+        favorite_bvids = [row[0] for row in result.fetchall()]
+        if not favorite_bvids:
+            logger.info(f"Graph (favorites): no favorited videos for owner_mid={owner_mid}")
+            return
+
+        # 2. 通过两种路径找出属于收藏视频的 node_id：
+        #    a) KnowledgeEdge.evidence_video_bvid — 编译时或收藏同步时创建
+        #    b) NodeSegmentLink.video_bvid — 视频片段关联
+        favorite_node_ids = set()
+
+        # 路径 a: 通过 KnowledgeEdge（owner_mid 过滤放在 union 内部）
+        src_query = select(KnowledgeEdge.source_node_id).where(
+            KnowledgeEdge.evidence_video_bvid.in_(favorite_bvids)
+        )
+        tgt_query = select(KnowledgeEdge.target_node_id).where(
+            KnowledgeEdge.evidence_video_bvid.in_(favorite_bvids)
+        )
+        if owner_mid != 0:
+            src_query = src_query.where(KnowledgeEdge.owner_mid == owner_mid)
+            tgt_query = tgt_query.where(KnowledgeEdge.owner_mid == owner_mid)
+        edge_node_query = src_query.union(tgt_query)
+        edge_result = await db.execute(edge_node_query)
+        favorite_node_ids.update(row[0] for row in edge_result.fetchall())
+
+        # 路径 b: 通过 NodeSegmentLink
+        link_query = select(NodeSegmentLink.node_id).where(
+            NodeSegmentLink.video_bvid.in_(favorite_bvids)
+        )
+        if owner_mid != 0:
+            link_query = link_query.where(NodeSegmentLink.owner_mid == owner_mid)
+        link_result = await db.execute(link_query)
+        favorite_node_ids.update(row[0] for row in link_result.fetchall())
+
+        if not favorite_node_ids:
+            logger.info(f"Graph (favorites): no nodes linked to favorited videos")
+            return
+
+        # 3. 加载节点
+        node_query = select(KnowledgeNode).where(
+            KnowledgeNode.id.in_(favorite_node_ids)
+        )
+        if owner_mid != 0:
+            node_query = node_query.where(KnowledgeNode.owner_mid == owner_mid)
+        else:
+            node_query = node_query.where(KnowledgeNode.owner_mid == 0)
+
+        nodes_result = await db.execute(node_query)
+        for node in nodes_result.scalars().all():
+            self.graph.add_node(node.id, **{
+                "node_type": node.node_type or "concept",
+                "name": node.name or "",
+                "normalized_name": node.normalized_name or "",
+                "aliases": node.aliases or [],
+                "definition": node.definition or "",
+                "difficulty": node.difficulty if node.difficulty is not None else 1,
+                "main_topic_id": node.main_topic_id,
+                "confidence": node.confidence if node.confidence is not None else 0.5,
+                "source_count": node.source_count if node.source_count is not None else 1,
+                "review_status": node.review_status or "auto",
+            })
+
+        # 4. 加载边（只加载两端都在 favorite_node_ids 中的边）
+        edge_query = select(KnowledgeEdge).where(
+            KnowledgeEdge.source_node_id.in_(favorite_node_ids),
+            KnowledgeEdge.target_node_id.in_(favorite_node_ids),
+        )
+        if owner_mid != 0:
+            edge_query = edge_query.where(KnowledgeEdge.owner_mid == owner_mid)
+        # demo user: edges may have NULL owner_mid historically
+        edges_result = await db.execute(edge_query)
+        for edge in edges_result.scalars().all():
+            self.graph.add_edge(edge.source_node_id, edge.target_node_id, **{
+                "relation_type": edge.relation_type or "related_to",
+                "weight": edge.weight if edge.weight is not None else 1.0,
+                "confidence": edge.confidence if edge.confidence is not None else 0.5,
+                "evidence_segment_id": edge.evidence_segment_id,
+                "evidence_video_bvid": edge.evidence_video_bvid,
+                "edge_id": edge.id,
+            })
+
+        logger.info(
+            f"Graph loaded (favorites only): {self.graph.number_of_nodes()} nodes, "
+            f"{self.graph.number_of_edges()} edges (from {len(favorite_bvids)} favorited videos)"
+        )
+
     async def sync_node_to_db(self, db: AsyncSession, node_id: int, attrs: dict) -> KnowledgeNode:
         """同步单个节点到 SQLite"""
         result = await db.execute(

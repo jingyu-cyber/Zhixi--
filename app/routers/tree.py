@@ -22,10 +22,10 @@ router = APIRouter(prefix="/tree", tags=["知识树"])
 
 
 async def _load_graph_store(db: AsyncSession, session_id: Optional[str] = None) -> GraphStore:
-    """为当前请求加载隔离后的图谱快照（按 owner_mid 过滤）"""
+    """为当前请求加载隔离后的图谱快照（只含收藏视频的知识）"""
     owner_mid = await _resolve_owner_mid(db, session_id)
     gs = GraphStore(graph_path=settings.graph_persist_path)
-    await gs.load_from_db(db, session_id=None, owner_mid=owner_mid)
+    await gs.load_from_db_favorites_only(db, owner_mid=owner_mid, session_id=session_id)
     return gs
 
 

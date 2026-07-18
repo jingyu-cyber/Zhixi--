@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, delete, and_, or_
 from app.database import get_db_context
-from app.models import UserCollection, Concept, KnowledgeNode, KnowledgeEdge
+from app.models import UserCollection, Concept, KnowledgeNode, KnowledgeEdge, NodeSegmentLink
 from app.utils import resolve_owner_mid
 
 router = APIRouter(prefix="/collection", tags=["collection"])
@@ -233,3 +233,38 @@ async def list_collection(session_id: str = Query(...)):
             {"bvid": r.bvid, "title": r.title, "created_at": str(r.created_at)}
             for r in rows
         ]
+
+
+@router.post("/clear-tree")
+async def clear_knowledge_tree(session_id: str = Query(...)):
+    """一键清除当前用户的知识树数据（KnowledgeNode + KnowledgeEdge）
+
+    用户要求：在修复知识树同步前，先将所有旧数据清除。
+    """
+    async with get_db_context() as db:
+        owner_mid = await resolve_owner_mid(db, session_id)
+        if owner_mid is None:
+            raise HTTPException(status_code=401, detail="会话无效")
+
+        from sqlalchemy import text as sql_text
+
+        # 删除该用户的 KnowledgeEdge
+        edge_result = await db.execute(
+            delete(KnowledgeEdge).where(KnowledgeEdge.owner_mid == owner_mid)
+        )
+        # 删除该用户的 KnowledgeNode
+        node_result = await db.execute(
+            delete(KnowledgeNode).where(KnowledgeNode.owner_mid == owner_mid)
+        )
+        # 删除该用户的 NodeSegmentLink
+        link_result = await db.execute(
+            delete(NodeSegmentLink).where(NodeSegmentLink.owner_mid == owner_mid)
+        )
+        await db.commit()
+
+        return {
+            "message": "知识树已清除",
+            "deleted_nodes": node_result.rowcount,
+            "deleted_edges": edge_result.rowcount,
+            "deleted_links": link_result.rowcount,
+        }

@@ -220,7 +220,7 @@ export default function WorkspacePage() {
     const requestId = ++resultRequestIdRef.current;
     setLoadingResult(true);
     try {
-      const result = await compileApi.getResult(bvid, pageCid ?? undefined);
+      const result = await compileApi.getResult(bvid, pageCid ?? undefined, sid);
       if (resultRequestIdRef.current === requestId && isActiveSession(sid)) {
         setCompileResult(result);
       }
@@ -233,6 +233,42 @@ export default function WorkspacePage() {
       setLoadingResult(false);
     }
   }, [sessionId]);
+
+  const fetchResultWithRetry = useCallback(async (
+    bvid: string,
+    pageCid: number | null | undefined,
+    activeSessionId: string
+  ) => {
+    const retryDelays = [0, 600, 1200, 2400];
+    const requestId = ++resultRequestIdRef.current;
+    setLoadingResult(true);
+
+    for (const delay of retryDelays) {
+      if (delay > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+      if (resultRequestIdRef.current !== requestId || !isActiveSession(activeSessionId)) {
+        return;
+      }
+      try {
+        const result = await compileApi.getResult(bvid, pageCid ?? undefined, activeSessionId);
+        if (resultRequestIdRef.current === requestId && isActiveSession(activeSessionId)) {
+          setSelectedBvid(bvid);
+          setSelectedCid(pageCid ?? null);
+          setCompileResult(result);
+          setLoadingResult(false);
+        }
+        return;
+      } catch {
+        // The compile task can finish just before the result is visible through the API.
+      }
+    }
+
+    if (resultRequestIdRef.current === requestId && isActiveSession(activeSessionId)) {
+      setCompileResult(null);
+      setLoadingResult(false);
+    }
+  }, []);
 
   const handleSelectVideo = (bvid: string, pageCid?: number | null) => {
     setSelectedBvid(bvid);
@@ -267,7 +303,8 @@ export default function WorkspacePage() {
           }
 
           // Jingyu: 后端进度可能跳跃，前端做平滑过渡
-          const realProgress = status.progress || 0;
+          const rawProgress = Number(status.progress) || 0;
+          const realProgress = rawProgress > 1 ? rawProgress / 100 : rawProgress;
           simulatedProgress = Math.max(simulatedProgress, realProgress);
           // 如果真实进度停滞，模拟缓慢增长（最多到0.85）
           if (realProgress < 0.3 && simulatedProgress < 0.85) {
@@ -277,6 +314,8 @@ export default function WorkspacePage() {
 
           if (status.status === "completed") {
             // 平滑过渡到100%
+            setSelectedBvid(bvid);
+            setSelectedCid(cid ?? null);
             setCompileProgress(0.9);
             setTimeout(() => setCompileProgress(0.95), 150);
             setTimeout(() => setCompileProgress(1), 350);
@@ -292,9 +331,7 @@ export default function WorkspacePage() {
             }
             // 清理 localStorage 中的编译任务
             try { localStorage.removeItem(`bilimind_compile_${bvid}`); } catch {}
-            if (selectedBvid === bvid) {
-              void fetchResult(bvid, cid, activeSessionId);
-            }
+            void fetchResultWithRetry(bvid, cid, activeSessionId);
           } else if (status.status === "failed") {
             setCompiling(null);
             if ("Notification" in window && Notification.permission === "granted") {

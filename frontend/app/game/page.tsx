@@ -58,11 +58,15 @@ export default function GamePage() {
     setLoading(true); setSelected(null); setResult(null); setError(null);
     try {
       const res = await fetch(`${API}/game/challenge?session_id=${session}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Failed to load challenge");
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text.slice(0, 100) || `HTTP ${res.status}`);
+      }
+      const data = await res.json().catch(() => null);
+      if (!data) throw new Error("响应格式错误，请刷新页面后重试");
       if (data.empty) setChallenge(null); else setChallenge(data);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to load");
+      setError(e instanceof Error ? e.message : "加载失败，请刷新重试");
     } finally { setLoading(false); }
   }, [session]);
 
@@ -70,7 +74,10 @@ export default function GamePage() {
     if (!session) return;
     try {
       const res = await fetch(`${API}/game/stats?session_id=${session}`);
-      if (res.ok) setStats(await res.json());
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data) setStats(data);
+      }
     } catch {}
   }, [session]);
 

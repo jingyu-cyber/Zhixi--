@@ -82,6 +82,31 @@ export interface UserInfo {
     level?: number;
 }
 
+export interface RestoreStateResponse {
+    compiled_videos: CompiledVideoItem[];
+    total_compiled: number;
+    collections: { bvid: string; title: string; created_at: string }[];
+    total_collections: number;
+    knowledge_node_count: number;
+    concept_count: number;
+    memory_node_count: number;
+    folders: { media_id: number; title: string; media_count: number }[];
+    owner_mid: number | null;
+}
+
+export interface CompiledVideoItem {
+    bvid: string;
+    title: string;
+    duration?: number;
+    owner_name?: string;
+    pic_url?: string;
+    extraction_status?: string;
+    knowledge_node_count?: number;
+    content_category?: string;
+    is_processed?: boolean;
+    updated_at?: string;
+}
+
 export interface FavoriteFolder {
     media_id: number;
     title: string;
@@ -220,6 +245,10 @@ export const authApi = {
     // 演示账号登录（无需B站扫码）
     loginAsDemo: () =>
         request<{ session_id: string; user_info: UserInfo; is_demo: boolean }>("/auth/demo", { method: "POST" }),
+
+    // 恢复用户历史状态（编译视频、收藏、记忆等）
+    restoreState: (sessionId: string) =>
+        request<RestoreStateResponse>(`/auth/restore-state?session_id=${sessionId}`),
 };
 
 // 收藏夹相关
@@ -913,11 +942,12 @@ export const compileApi = {
     if (sid) params.set("session_id", sid);
     return request<{ status: string; progress: number; message: string }>(`/compile/status/${taskId}?${params.toString()}`);
   },
-  getResult: (bvid: string, pageCid?: number) => {
+  getResult: (bvid: string, pageCid?: number, sessionId?: string | null) => {
     const params = new URLSearchParams();
-    const sid = getSessionId();
+    const sid = sessionId ?? getSessionId();
     if (sid) params.set("session_id", sid);
     if (pageCid != null) params.set("page_cid", String(pageCid));
+    params.set("_t", String(Date.now()));
     return request<CompileResult>(`/compile/result/${bvid}?${params.toString()}`);
   },
 };
@@ -944,6 +974,50 @@ export const organizerApi = {
   },
 };
 
+// ==================== 学生画像类型 ====================
+
+export interface ProfileDimension {
+  label: string;
+  score: number;
+  level: string;
+  label_cn: string;
+  detail: Record<string, any>;
+}
+
+export interface EvaluationReport {
+  profile: ProfileData;
+  weak_concepts: { node_id: number; name: string; easiness_factor: number; interval_days: number; repetitions: number; url: string }[];
+  weak_count: number;
+  recommendations: { area: string; advice: string; action: string; link: string }[];
+  trend: string;
+  trend_label: string;
+  evaluation_summary: Record<string, any>;
+}
+
+export interface ProfileData {
+  owner_mid: number | null;
+  composite_score: number;
+  composite_level: string;
+  composite_label: string;
+  dimensions: Record<string, ProfileDimension>;
+  radar: { labels: string[]; values: number[] };
+}
+
+export const profileApi = {
+  get: (sessionId: string) =>
+    request<ProfileData>(`/api/profile?session_id=${sessionId}`),
+  dialog: (message: string, sessionId: string) =>
+    request<{ response: string; profile: ProfileData; suggestions: string[] }>(
+      "/api/profile/dialog",
+      {
+        method: "POST",
+        body: JSON.stringify({ session_id: sessionId, message }),
+      }
+    ),
+  evaluation: (sessionId: string) =>
+    request<EvaluationReport>(`/api/profile/evaluation/report?session_id=${sessionId}`),
+};
+
 export const collectionApi = {
   toggle: (bvid: string, title: string, sessionId: string) =>
     request<{ hearted: boolean; bvid: string }>("/collection/toggle", {
@@ -952,6 +1026,11 @@ export const collectionApi = {
     }),
   list: (sessionId: string) =>
     request<{ bvid: string; title: string; created_at: string }[]>(`/collection/list?session_id=${sessionId}`),
+  clearTree: (sessionId: string) =>
+    request<{ message: string; deleted_nodes: number; deleted_edges: number; deleted_links: number }>(
+      `/collection/clear-tree?session_id=${sessionId}`,
+      { method: "POST" }
+    ),
 };
 
 // ==================== 记忆系统类型 ====================

@@ -17,18 +17,18 @@ router = APIRouter(prefix="/srs", tags=["间隔重复"])
 
 
 async def _seed_srs_from_graph(db: AsyncSession, session_id: str, limit: int = 30) -> int:
-    """从知识图谱节点自动创建初始 SRS 记录（仅用于新用户/演示账号）"""
+    """从收藏视频的知识图谱节点自动创建初始 SRS 记录（只基于收藏视频）"""
     from sqlalchemy import select as sql_select
     from app.models import KnowledgeNode
     from app.services.graph_store import GraphStore
     from app.config import settings
-    from app.utils import resolve_owner_mid as _resolve_owner_mid
+    from app.utils import resolve_owner_mid as _resolve_owner_mid, get_favorite_bvids
     from datetime import datetime, timedelta
 
-    # 加载图谱（按 owner_mid 隔离，演示用户查看全部）
+    # 加载收藏视频的图谱
     owner_mid = await _resolve_owner_mid(db, session_id)
     graph = GraphStore(graph_path=settings.graph_persist_path)
-    await graph.load_from_db(db, session_id=session_id, owner_mid=owner_mid)
+    await graph.load_from_db_favorites_only(db, owner_mid=owner_mid, session_id=session_id)
 
     all_nodes = graph.all_nodes()
     if not all_nodes:

@@ -784,6 +784,7 @@ export default function WorkspacePage() {
                     {activeTab === "video" && selectedBvid && (
                       <div style={{ padding: 16 }}>
                         <VideoPlayer
+                          key={`${selectedBvid}_${selectedCid || selectedPage?.page || 1}`}
                           bvid={selectedBvid}
                           title={selectedPage?.part || selectedVideo?.title}
                           cid={selectedCid}

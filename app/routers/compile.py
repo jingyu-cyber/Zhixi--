@@ -433,19 +433,15 @@ async def get_compile_result(
     all_concepts = concept_rows.scalars().all()
 
     # 获取与此视频关联的 Claims（按 page_cid 过滤）
-    # 如果按 page_cid 查不到数据，说明数据是整集编译的（page_cid=NULL），回退显示全部
+    # 分集请求必须严格按 page_cid 返回，不能回退到整集/其他分集数据。
+    # 否则合集里未编译的子视频会显示成第一集或上一集的内容。
     claim_query = select(Claim).where(Claim.video_bvid == bvid)
     if owner_mid is not None:
         claim_query = claim_query.where(Claim.owner_mid == owner_mid)
     if is_page:
-        page_claim_query = claim_query.where(Claim.page_cid == page_cid)
-        page_result = await db.execute(page_claim_query)
-        page_claims = page_result.scalars().all()
-        if page_claims:
-            all_claims = page_claims
-        else:
-            # 子视频无独立编译数据，回退显示整集数据
-            all_claims = (await db.execute(claim_query)).scalars().all()
+        claim_query = claim_query.where(Claim.page_cid == page_cid)
+        claim_rows = await db.execute(claim_query)
+        all_claims = claim_rows.scalars().all()
     else:
         claim_rows = await db.execute(claim_query)
         all_claims = claim_rows.scalars().all()

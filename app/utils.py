@@ -15,6 +15,8 @@ async def resolve_owner_mid(db: AsyncSession, session_id: Optional[str]) -> Opti
     """
     if not session_id:
         return None
+    if session_id == "demo_session":
+        return 0
     result = await db.execute(
         select(UserSession.bili_mid).where(UserSession.session_id == session_id)
     )

@@ -156,6 +156,16 @@ export default function NodeDetailPage() {
                   <div key={v.bvid} className="video-card">
                     <Link href={`/video/${v.bvid}`} className="video-card-title">{v.title}</Link>
                     {v.owner_name && <div className="video-card-meta">UP主：{v.owner_name}</div>}
+                    <div style={{ marginTop: 10, marginBottom: v.segments.length > 0 ? 10 : 0 }}>
+                      <a
+                        href={`${v.url || `https://www.bilibili.com/video/${v.bvid}`}${v.segments[0]?.start_time ? `?t=${Math.floor(v.segments[0].start_time || 0)}` : ""}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-sm btn-bilibili"
+                      >
+                        ▶ 前往B站看视频
+                      </a>
+                    </div>
                     {v.segments.map((seg, i) => (
                       <div key={i} className="segment-item">
                         <span className="segment-time">

@@ -38,7 +38,9 @@ function LearningPathContent() {
   // 从路径步骤中提取节点 ID 列表（用于 3D 图谱高亮）
   const pathNodeIds = useMemo(() => {
     if (!path) return [];
-    return path.steps.map((s) => s.node_id);
+    return path.steps
+      .map((s) => s.node_id)
+      .filter((id): id is number => typeof id === "number");
   }, [path]);
 
   useEffect(() => {
@@ -61,7 +63,7 @@ function LearningPathContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, scopeKey]);
 
-  const handleGenerate = async (target?: string) => {
+  const handleGenerate = async (target?: string, modeOverride?: "beginner" | "standard" | "quick") => {
     const t = (target || query).trim();
     if (!t || !sessionId) return;
     setQuery(t);
@@ -69,12 +71,19 @@ function LearningPathContent() {
     setError("");
     setPath(null);
     try {
-      const result = await learningPathApi.aiGenerate({ topic: t, mode });
+      const result = await learningPathApi.aiGenerate({ topic: t, mode: modeOverride || mode });
       setPath(result);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "生成路径失败，请检查是否配置了 DashScope API Key");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleModeChange = (nextMode: "beginner" | "standard" | "quick") => {
+    setMode(nextMode);
+    if (path && query.trim() && sessionId) {
+      handleGenerate(query, nextMode);
     }
   };
 
@@ -131,7 +140,7 @@ function LearningPathContent() {
                 aria-label="选择学习模式"
                 className="tree-filter"
                 value={mode}
-                onChange={(e) => setMode(e.target.value as "beginner" | "standard" | "quick")}
+                onChange={(e) => handleModeChange(e.target.value as "beginner" | "standard" | "quick")}
                 style={{ padding: "8px 12px" }}
               >
                 <option value="beginner">入门路径</option>
@@ -242,14 +251,16 @@ function LearningPathContent() {
                     </div>
                   </div>
 
-                  {/* 右侧：3D 图谱（高亮路径） */}
-                  <div className="path-graph-panel">
-                    <KnowledgeGraph3D
-                      selectedNodeId={focusedStepId}
-                      onNodeSelect={(id) => setFocusedStepId(id)}
-                      highlightPath={pathNodeIds}
-                    />
-                  </div>
+                  {pathNodeIds.length > 0 && (
+                    <div className="path-graph-panel">
+                      <KnowledgeGraph3D
+                        sessionId={sessionId}
+                        selectedNodeId={focusedStepId}
+                        onNodeSelect={(id) => setFocusedStepId(id)}
+                        highlightPath={pathNodeIds}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             )}

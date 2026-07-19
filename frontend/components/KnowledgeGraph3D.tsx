@@ -413,12 +413,7 @@ export default function KnowledgeGraph3D({
   }
 
   if (!data || data.nodes.length === 0) {
-    return (
-      <div className="nebula-empty">
-        <p>暂无图谱数据</p>
-        <p>请先构建知识库。</p>
-      </div>
-    );
+    return null;
   }
 
   return (

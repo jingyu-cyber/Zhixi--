@@ -10,7 +10,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import KnowledgeNode, KnowledgeEdge, NodeSegmentLink, Segment, VideoCache, _fmt_time
+from app.models import KnowledgeNode, KnowledgeEdge, NodeSegmentLink, Segment, UserCollection, VideoCache, _fmt_time
 from app.services.graph_store import GraphStore
 from app.services.tree_builder import TreeBuilder, _is_noise_name, _compute_grade
 from app.services.path_recommender import PathRecommender
@@ -375,6 +375,26 @@ async def get_node_detail(
                 "evidence_score": round(video_scores[vc.bvid]["score"], 3),
                 "segments": video_scores[vc.bvid]["segments"],
                 "url": f"https://www.bilibili.com/video/{vc.bvid}",
+            })
+
+    if not videos and node.node_type == "topic":
+        collection_query = select(UserCollection).where(UserCollection.title == node.name)
+        if owner_mid is not None:
+            collection_query = collection_query.where(UserCollection.owner_mid == owner_mid)
+        collection_result = await db.execute(collection_query)
+        collection = collection_result.scalars().first()
+        if collection:
+            video_result = await db.execute(select(VideoCache).where(VideoCache.bvid == collection.bvid))
+            vc = video_result.scalar_one_or_none()
+            videos.append({
+                "bvid": collection.bvid,
+                "title": vc.title if vc else collection.title,
+                "owner_name": vc.owner_name if vc else None,
+                "pic_url": vc.pic_url if vc else None,
+                "duration": vc.duration if vc else None,
+                "evidence_score": 1.0 if node.source_count else 0.0,
+                "segments": [],
+                "url": f"https://www.bilibili.com/video/{collection.bvid}",
             })
     videos.sort(key=lambda v: (-v["evidence_score"], v["title"]))
 

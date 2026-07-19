@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, delete, and_, or_
 from app.database import get_db_context
-from app.models import UserCollection, Concept, KnowledgeNode, KnowledgeEdge, NodeSegmentLink
+from app.models import UserCollection, Concept, Claim, KnowledgeNode, KnowledgeEdge, NodeSegmentLink
 from app.utils import resolve_owner_mid
 
 router = APIRouter(prefix="/collection", tags=["collection"])
@@ -21,12 +21,16 @@ class ToggleRequest(BaseModel):
 async def _sync_video_to_tree(db, bvid: str, title: str, owner_mid: int, session_id: str):
     """将视频的概念同步到知识树"""
     # 1. 查找该视频的所有概念（从 concepts 表）
-    result = await db.execute(
-        select(Concept).where(Concept.video_bvid == bvid)
+    concept_ids_result = await db.execute(
+        select(Claim.concept_id).where(Claim.video_bvid == bvid).distinct()
     )
+    claim_concept_ids = [row[0] for row in concept_ids_result.fetchall() if row[0]]
+
+    concept_filters = [Concept.video_bvid == bvid]
+    if claim_concept_ids:
+        concept_filters.append(Concept.id.in_(claim_concept_ids))
+    result = await db.execute(select(Concept).where(or_(*concept_filters)))
     concepts = result.scalars().all()
-    if not concepts:
-        return None  # 视频尚未编译，无概念可同步
 
     # 2. 创建或获取主题节点
     result = await db.execute(
@@ -52,6 +56,14 @@ async def _sync_video_to_tree(db, bvid: str, title: str, owner_mid: int, session
         )
         db.add(topic_node)
         await db.flush()
+
+    if not concepts:
+        topic_node.source_count = max(topic_node.source_count or 1, 1)
+        return {
+            "concepts_synced": 0,
+            "topic_edges": 0,
+            "cross_edges": 0,
+        }
 
     concept_nodes_added = 0
     edges_added = 0
@@ -160,6 +172,11 @@ async def _remove_video_from_tree(db, bvid: str, owner_mid: int):
         await db.delete(edge)
         removed_edges += 1
 
+    remaining_result = await db.execute(
+        select(UserCollection.title).where(UserCollection.owner_mid == owner_mid)
+    )
+    remaining_titles = {row[0] for row in remaining_result.fetchall() if row[0]}
+
     # 查找并删除该视频的主题节点（如果没有其他视频使用它）
     result = await db.execute(
         select(KnowledgeNode).where(
@@ -175,7 +192,7 @@ async def _remove_video_from_tree(db, bvid: str, owner_mid: int):
                 KnowledgeEdge.relation_type == "belongs_to",
             )
         )
-        if not result2.scalars().first():
+        if not result2.scalars().first() and topic.name not in remaining_titles:
             await db.delete(topic)
 
 

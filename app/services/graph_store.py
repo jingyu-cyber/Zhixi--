@@ -357,9 +357,11 @@ class GraphStore:
         # 1. 获取收藏的视频 bvid 列表
         from app.models import UserCollection
         result = await db.execute(
-            select(UserCollection.bvid).where(UserCollection.owner_mid == owner_mid)
+            select(UserCollection.bvid, UserCollection.title).where(UserCollection.owner_mid == owner_mid)
         )
-        favorite_bvids = [row[0] for row in result.fetchall()]
+        favorite_rows = result.fetchall()
+        favorite_bvids = [row[0] for row in favorite_rows]
+        favorite_titles = [row[1] for row in favorite_rows if row[1]]
         if not favorite_bvids:
             logger.info(f"Graph (favorites): no favorited videos for owner_mid={owner_mid}")
             return
@@ -391,6 +393,16 @@ class GraphStore:
             link_query = link_query.where(NodeSegmentLink.owner_mid == owner_mid)
         link_result = await db.execute(link_query)
         favorite_node_ids.update(row[0] for row in link_result.fetchall())
+
+        # Path c: include favorited video topic nodes even before concept edges exist.
+        if favorite_titles:
+            topic_query = select(KnowledgeNode.id).where(
+                KnowledgeNode.owner_mid == owner_mid,
+                KnowledgeNode.node_type == "topic",
+                KnowledgeNode.name.in_(favorite_titles),
+            )
+            topic_result = await db.execute(topic_query)
+            favorite_node_ids.update(row[0] for row in topic_result.fetchall())
 
         if not favorite_node_ids:
             logger.info(f"Graph (favorites): no nodes linked to favorited videos")

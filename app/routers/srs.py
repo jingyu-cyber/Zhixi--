@@ -11,7 +11,7 @@ from loguru import logger
 from app.database import get_db
 from app.models import SRSRecord, KnowledgeNode
 from app.routers.knowledge import get_graph
-from app.services.srs import record_review, get_due_reviews, get_stats
+from app.services.srs import record_review, record_review_basic, get_due_reviews, get_stats
 
 router = APIRouter(prefix="/srs", tags=["间隔重复"])
 
@@ -35,10 +35,10 @@ async def _seed_srs_from_graph(db: AsyncSession, session_id: str, limit: int = 3
         return 0
 
     # 过滤噪声，按 source_count 排序，并按名称去重
-    from app.services.tree_builder import _is_noise_name
+    from app.services.srs import _is_valid_review_node
     qualified = [n for n in all_nodes
                  if n.get("review_status") != "rejected"
-                 and not _is_noise_name(n.get("name", ""))]
+                 and _is_valid_review_node(n.get("name", ""), n.get("definition", ""))]
     qualified.sort(key=lambda n: -n.get("source_count", 0))
 
     # 按 normalized_name 去重
@@ -105,11 +105,15 @@ async def submit_review(
     db: AsyncSession = Depends(get_db),
 ):
     """提交复习结果，返回更新后的 SRS 状态 + 隐式复习节点"""
-    graph = get_graph()
-    result = await record_review(
-        db, req.session_id, req.node_id, req.quality, graph
-    )
-    return result
+    try:
+        graph = get_graph()
+        return await record_review(
+            db, req.session_id, req.node_id, req.quality, graph
+        )
+    except Exception as e:
+        await db.rollback()
+        logger.warning(f"SRS graph review failed, falling back to basic review: {e}")
+        return await record_review_basic(db, req.session_id, req.node_id, req.quality)
 
 
 @router.get("/stats")

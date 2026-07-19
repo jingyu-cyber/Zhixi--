@@ -70,18 +70,7 @@ export default function GamePage() {
     } finally { setLoading(false); }
   }, [session]);
 
-  const fetchStats = useCallback(async () => {
-    if (!session) return;
-    try {
-      const res = await fetch(`${API}/game/stats?session_id=${session}`);
-      if (res.ok) {
-        const data = await res.json().catch(() => null);
-        if (data) setStats(data);
-      }
-    } catch {}
-  }, [session]);
-
-  useEffect(() => { if (session) { fetchChallenge(); fetchStats(); } }, [session, fetchChallenge, fetchStats]);
+  useEffect(() => { if (session) { fetchChallenge(); } }, [session, fetchChallenge]);
 
   const handleAnswer = async (answer: string) => {
     if (!session || !challenge || selected) return;
@@ -89,7 +78,7 @@ export default function GamePage() {
     const isCorrect = answer === (challenge as any).correct_option;
     setResult({ correct: isCorrect, correct_answer: "", correct_answer_label: "", explanation: "", score: 0, streak: 0 });
     try {
-      await fetch(`${API}/game/answer`, {
+      const res = await fetch(`${API}/game/answer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -97,9 +86,28 @@ export default function GamePage() {
           node_b_id: 0, answer,
         }),
       });
-      await fetchStats();
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data) {
+          setResult(data);
+          setStats((prev) => {
+            const nextTotal = prev.total + 1;
+            const nextCorrect = prev.correct + (data.correct ? 1 : 0);
+            const nextStreak = data.correct ? prev.streak + 1 : 0;
+            const nextBest = Math.max(prev.best_streak, nextStreak);
+            const nextScore = prev.score + (data.correct ? 10 + nextStreak * 2 : 0);
+            return {
+              total: nextTotal,
+              correct: nextCorrect,
+              streak: nextStreak,
+              best_streak: nextBest,
+              score: nextScore,
+            };
+          });
+        }
+      }
     } catch {}
-    setTimeout(() => { fetchChallenge(); fetchStats(); }, 2200);
+    setTimeout(() => { fetchChallenge(); }, 2200);
   };
 
   const getOptionStyle = (opt: string) => {

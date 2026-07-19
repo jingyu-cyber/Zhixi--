@@ -125,31 +125,11 @@ export default function Home() {
         try {
           const res = await authApi.getSession(sessionId);
           if (res.valid) {
-            // Session valid - auto redirect
-            const referrer = typeof document !== "undefined" ? document.referrer : "";
-            const isInternalNav = referrer && new URL(referrer).host === window.location.host;
-            if (isInternalNav) {
-              setChecking(false);
-            } else {
-              router.replace("/workspace");
-            }
+            setChecking(false);
             return;
           }
         } catch {
           // Session invalid, try demo auto-login if remember_me was set
-        }
-        // Session expired - try auto demo login
-        const rememberMe = typeof window !== "undefined" ? localStorage.getItem("bilimind_remember") : null;
-        if (rememberMe === "1") {
-          try {
-            const res = await authApi.loginAsDemo();
-            setAuthSession(res.session_id, res.user_info.uname);
-            localStorage.setItem("bilimind_remember", "1");
-            router.replace("/workspace");
-            return;
-          } catch {
-            // Demo login failed, show home page
-          }
         }
       }
       setChecking(false);

@@ -33,6 +33,78 @@ class AiPathRequest(BaseModel):
     mode: str = "standard"  # beginner / standard / quick
 
 
+MODE_PROFILES = {
+    "beginner": {
+        "label": "入门路径",
+        "step_range": "8-10",
+        "instruction": "面向零基础学习者，必须补齐前置概念、术语、基础操作和常见误区；步骤要细，允许从目标外围基础讲起。",
+        "max_steps": 10,
+    },
+    "standard": {
+        "label": "标准路径",
+        "step_range": "5-7",
+        "instruction": "面向有一定基础的学习者，聚焦核心概念、关键方法和必要前置；避免过细，也不要跳过关键环节。",
+        "max_steps": 7,
+    },
+    "quick": {
+        "label": "快速复习",
+        "step_range": "3-4",
+        "instruction": "面向已经学过、只需要复习的人，只保留最高频考点/关键结论/易错点；跳过铺垫和入门解释。",
+        "max_steps": 4,
+    },
+}
+
+
+def _mode_profile(mode: str) -> dict:
+    return MODE_PROFILES.get(mode, MODE_PROFILES["standard"])
+
+
+def _fallback_steps_for_mode(topic: str, mode: str) -> list[dict]:
+    if mode == "beginner":
+        titles = ["学习目标拆解", "基础术语入门", "核心背景知识", "基本原理", "常见方法", "典型例题", "易错点辨析", "综合应用"]
+    elif mode == "quick":
+        titles = ["核心概念速览", "高频考点回顾", "易错点与实战检查"]
+    else:
+        titles = ["基础概念", "核心原理", "关键方法", "典型应用", "综合练习"]
+    return [
+        {
+            "step": i,
+            "title": f"{topic}：{title}",
+            "description": f"围绕「{topic}」复习或学习 {title}。",
+            "reason": "根据当前学习模式自动保留最适合的学习粒度。",
+            "difficulty": min(5, max(1, i)),
+            "video": None,
+        }
+        for i, title in enumerate(titles, start=1)
+    ]
+
+
+def _normalize_ai_path_by_mode(data: dict, mode: str, topic: str = "") -> dict:
+    profile = _mode_profile(mode)
+    steps = list(data.get("steps") or [])
+    bad_titles = {"", "知识点名称", "鐭ヨ瘑鐐瑰悕绉?", "标题", "title"}
+    if not steps or any(str(step.get("title") or step.get("name") or "").strip() in bad_titles for step in steps):
+        steps = _fallback_steps_for_mode(topic or str(data.get("target") or "学习目标"), mode)
+    max_steps = profile["max_steps"]
+    if len(steps) > max_steps:
+        if mode == "quick":
+            steps = steps[-max_steps:]
+        else:
+            steps = steps[:max_steps]
+    for i, step in enumerate(steps, start=1):
+        step["step"] = i
+    data["steps"] = steps
+    data["mode"] = mode
+    summary = data.get("summary")
+    if isinstance(summary, dict):
+        summary.setdefault("mode_label", profile["label"])
+    elif summary:
+        data["summary"] = f"{profile['label']}：{summary}"
+    else:
+        data["summary"] = f"{profile['label']}，建议按 {profile['step_range']} 个步骤完成。"
+    return data
+
+
 def _is_shared_session(session_id: Optional[str]) -> bool:
     """演示用户或未登录用户共享全部数据"""
     if not session_id:
@@ -357,12 +429,10 @@ async def ai_generate_learning_path(
     if not topic:
         raise HTTPException(status_code=400, detail="请输入学习目标主题")
 
-    mode_labels = {
-        "beginner": "入门路径 - 从最基础开始，覆盖所有必要前置知识",
-        "standard": "标准路径 - 覆盖核心知识点和重要前置",
-        "quick": "快速复习 - 精简链路，跳过已掌握内容",
-    }
-    mode_label = mode_labels.get(request.mode, mode_labels["standard"])
+    if request.mode not in MODE_PROFILES:
+        request.mode = "standard"
+    profile = _mode_profile(request.mode)
+    mode_label = f"{profile['label']} - {profile['instruction']}，输出 {profile['step_range']} 步"
 
     # Step 1: 搜索相关的视频片段
     segments_data = await _fetch_relevant_segments(db, topic, request.session_id)
@@ -462,6 +532,7 @@ async def _generate_ai_path(
 4. 步骤之间要有逻辑递进关系
 
 模式: {mode_label}
+硬性要求：steps 数量必须是 {profile['step_range']} 步；不同模式必须明显不同，不能只改模式名称。
 
 视频内容片段:
 {content_summary[:4000]}
@@ -513,6 +584,7 @@ difficulty 范围 1-5。related_video_index 为最相关视频片段索引（-1=
         else:
             step["video"] = None
 
+    data = _normalize_ai_path_by_mode(data, mode, topic)
     data["total_steps"] = len(data.get("steps", []))
     data["estimated_videos"] = sum(1 for s in data.get("steps", []) if s.get("video"))
     return data
@@ -527,21 +599,18 @@ async def _generate_conceptual_path(topic: str, mode: str) -> dict:
         base_url=base_url,
     )
 
-    mode_labels = {
-        "beginner": "入门路径，覆盖所有基础前置知识，步骤细致全面（8-10步）",
-        "standard": "标准路径，覆盖核心知识，平衡深度与效率（5-7步）",
-        "quick": "快速复习，精简关键点，快速到达目标（3-5步）",
-    }
+    profile = _mode_profile(mode)
 
     prompt = f"""你是一个教育课程设计师。用户想学习「{topic}」。
 
-请设计一条线性学习路径（{mode_labels.get(mode, mode_labels['standard'])}）。
+请设计一条线性学习路径（{profile['label']}）。
 
 要求：
-1. 从最基础的概念开始，逐步深入到高级主题
+1. {profile['instruction']}
 2. 每个步骤包含知识点名称和简要学习目标
 3. 步骤之间逻辑递进
 4. difficulty 从 1（入门）到 5（高级）递增
+5. steps 数量必须是 {profile['step_range']} 步；不同模式必须明显不同，不能只改模式名称。
 
 以 JSON 格式返回（不要markdown代码块）：
 {{
@@ -573,6 +642,7 @@ async def _generate_conceptual_path(topic: str, mode: str) -> dict:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI 生成学习路径失败: {str(e)}")
 
+    data = _normalize_ai_path_by_mode(data, mode, topic)
     data["total_steps"] = len(data.get("steps", []))
     data["estimated_videos"] = 0
     data["source"] = "ai_conceptual"

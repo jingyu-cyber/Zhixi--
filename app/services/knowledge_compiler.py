@@ -1431,7 +1431,14 @@ async def compile_video(
     synced_edge_count = 0
     from app.models import KnowledgeNode, KnowledgeEdge, NodeSegmentLink
 
-    async def ensure_knowledge_edge(source_id: int, target_id: int, relation_type: str, weight: float, confidence: float) -> bool:
+    async def ensure_knowledge_edge(
+        source_id: int,
+        target_id: int,
+        relation_type: str,
+        weight: float,
+        confidence: float,
+        evidence_segment_id: int | None = None,
+    ) -> bool:
         if not source_id or not target_id or source_id == target_id:
             return False
         existing_edge = await db.execute(
@@ -1450,6 +1457,7 @@ async def compile_video(
                 relation_type=relation_type,
                 weight=weight,
                 confidence=confidence,
+                evidence_segment_id=evidence_segment_id,
                 evidence_video_bvid=bvid,
                 session_id=session_id,
                 owner_mid=owner_mid,
@@ -1507,6 +1515,7 @@ async def compile_video(
         await db.flush()
 
     knowledge_nodes_by_norm = {}
+    segment_ids_by_norm = {}
     for norm_name, cdata in concept_map.items():
         concept_id = norm_to_concept_id.get(norm_name)
         if not concept_id:
@@ -1549,9 +1558,6 @@ async def compile_video(
         synced_node_count += 1
         knowledge_nodes_by_norm[norm_name] = kn
 
-        if await ensure_knowledge_edge(kn.id, topic_kn.id, "belongs_to", 1.0, 0.6):
-            synced_edge_count += 1
-
         linked_segment_ids = set()
         for cl in cdata.get("claims", []):
             seg_id = None
@@ -1562,20 +1568,26 @@ async def compile_video(
             if seg_id and seg_id not in linked_segment_ids:
                 linked_segment_ids.add(seg_id)
                 await ensure_node_segment_link(kn.id, seg_id, cl.get("confidence", 0.5))
+        segment_ids_by_norm[norm_name] = next(iter(linked_segment_ids), None)
 
-    concept_nodes = list(knowledge_nodes_by_norm.values())
-    for idx, source_node in enumerate(concept_nodes):
-        for target_node in concept_nodes[idx + 1:]:
-            if await ensure_knowledge_edge(source_node.id, target_node.id, "co_occurrence", 0.5, 0.35):
+        if await ensure_knowledge_edge(kn.id, topic_kn.id, "belongs_to", 1.0, 0.6, segment_ids_by_norm.get(norm_name)):
+            synced_edge_count += 1
+
+    concept_items = list(knowledge_nodes_by_norm.items())
+    for idx, (source_norm, source_node) in enumerate(concept_items):
+        for target_norm, target_node in concept_items[idx + 1:]:
+            evidence_segment_id = segment_ids_by_norm.get(source_norm) or segment_ids_by_norm.get(target_norm)
+            if await ensure_knowledge_edge(source_node.id, target_node.id, "co_occurrence", 0.5, 0.35, evidence_segment_id):
                 synced_edge_count += 1
-            if await ensure_knowledge_edge(target_node.id, source_node.id, "co_occurrence", 0.5, 0.35):
+            if await ensure_knowledge_edge(target_node.id, source_node.id, "co_occurrence", 0.5, 0.35, evidence_segment_id):
                 synced_edge_count += 1
 
     for src_norm, tgt_norm in prerequisite_pairs:
         src_node = knowledge_nodes_by_norm.get(src_norm)
         tgt_node = knowledge_nodes_by_norm.get(tgt_norm)
         if src_node and tgt_node:
-            if await ensure_knowledge_edge(src_node.id, tgt_node.id, "prerequisite_of", 1.0, 0.65):
+            evidence_segment_id = segment_ids_by_norm.get(src_norm) or segment_ids_by_norm.get(tgt_norm)
+            if await ensure_knowledge_edge(src_node.id, tgt_node.id, "prerequisite_of", 1.0, 0.65, evidence_segment_id):
                 synced_edge_count += 1
 
     await db.commit()

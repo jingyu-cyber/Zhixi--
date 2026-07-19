@@ -48,6 +48,45 @@ async def _get_current_tree_node_ids(db: AsyncSession, owner_mid: Optional[int])
     return node_ids
 
 
+async def _resolve_clickable_knowledge_node(
+    db: AsyncSession,
+    mem: MemoryNode,
+    owner_mid: Optional[int],
+    current_node_ids: set[int],
+) -> Optional[KnowledgeNode]:
+    """Return the current KnowledgeNode that the memory row can safely open."""
+    if mem.knowledge_node_id:
+        query = select(KnowledgeNode).where(KnowledgeNode.id == mem.knowledge_node_id)
+        if owner_mid is not None:
+            query = query.where(KnowledgeNode.owner_mid == owner_mid)
+        if owner_mid != 0 and current_node_ids:
+            query = query.where(KnowledgeNode.id.in_(current_node_ids))
+        result = await db.execute(query)
+        node = result.scalar_one_or_none()
+        if node:
+            return node
+
+    normalized = (mem.normalized_name or mem.name or "").strip().lower()
+    name = (mem.name or "").strip()
+    if not normalized and not name:
+        return None
+
+    query = select(KnowledgeNode).where(KnowledgeNode.node_type != "topic")
+    if owner_mid is not None:
+        query = query.where(KnowledgeNode.owner_mid == owner_mid)
+    if owner_mid != 0 and current_node_ids:
+        query = query.where(KnowledgeNode.id.in_(current_node_ids))
+    if normalized:
+        query = query.where(
+            (KnowledgeNode.normalized_name == normalized) | (KnowledgeNode.name == name)
+        )
+    else:
+        query = query.where(KnowledgeNode.name == name)
+
+    result = await db.execute(query.order_by(KnowledgeNode.updated_at.desc()).limit(1))
+    return result.scalar_one_or_none()
+
+
 BAD_MEMORY_FRAGMENTS = {
     "为什么", "怎么", "然后", "这个", "那个", "这里", "那里", "我们", "你们",
     "其实", "就是", "所以", "但是", "因为", "而这", "总", "大家", "东西",
@@ -281,18 +320,21 @@ async def get_history(
         return {"items": items}
 
     for mem in nodes:
+        kn = await _resolve_clickable_knowledge_node(db, mem, owner_mid, current_node_ids)
+        if not kn:
+            continue
         items.append({
             "bvid": "",
-            "node_id": mem.knowledge_node_id,
+            "node_id": kn.id,
             "video_title": "",
-            "concept_name": mem.name,
+            "concept_name": kn.name or mem.name,
             "memory_type": mem.memory_type,
             "memory_layer": mem.memory_layer,
             "recall_count": mem.recall_count,
-            "confidence": mem.confidence,
+            "confidence": kn.confidence or mem.confidence,
             "duration_seconds": 90,
-            "created_at": str(mem.created_at) if mem.created_at else "",
-            "updated_at": str(mem.updated_at) if mem.updated_at else "",
+            "created_at": str(mem.created_at or kn.created_at) if (mem.created_at or kn.created_at) else "",
+            "updated_at": str(mem.updated_at or kn.updated_at) if (mem.updated_at or kn.updated_at) else "",
         })
         if len(items) >= limit:
             break

@@ -1,230 +1,136 @@
-# BiliMind — 个人视频知识导航系统
+# 知析 ZhiXi
 
-将你的 B 站收藏视频自动转化为可浏览的知识树、可规划的学习路径、可追溯到原始视频时间点的知识证据系统。
+面向 A3 赛道的个性化视频知识生成与学习多智能体系统。
 
-> 不是聊天机器人，不是简单的视频搜索，而是一个面向个人收藏视频的**知识组织、学习导航与证据回溯系统**。
+知析 ZhiXi 将用户在 B 站收藏或导入的学习视频转化为可检索、可追踪、可复习的个人知识系统。系统围绕“视频内容理解 - 知识提炼 - 知识树组织 - 学习路径规划 - 智能问答 - 复习巩固”形成完整闭环，帮助用户把零散视频沉淀为结构化知识资产。
 
-![BiliMind 首页](assets/screenshots/landing.png)
+## 赛题方向
 
----
+- 竞赛：软件杯 A3 赛道
+- 方向：基于大模型的个性化资源生成与学习多智能体系统开发
+- 作品名称：知析 ZhiXi
+- 核心定位：从个人视频资源中自动提炼知识点、论断与学习路径，构建可交互的学习智能体应用
 
-## 为什么做这个项目
+## 核心功能
 
-很多人在 B 站收藏了大量学习视频——课程、讲座、技术分享——但收藏夹本身不提供任何知识组织能力。视频收藏得越多，越难回顾和系统学习。
+- 工作台：登录后同步 B 站收藏视频，支持单个视频和合集子视频编译。
+- 知识树：把视频内容提炼为知识点、论断、关系边和章节路径，支持跳转到 B 站原视频。
+- 知识智能体：小映，接入讯飞星火大模型，可围绕知识树进行问答、解释、总结和学习建议生成。
+- 学习路径：提供标准模式、入门模式、快速复习三类路径生成方式。
+- 知识对战：基于知识树生成题目，用正确率、连胜、最佳成绩等指标反馈学习状态。
+- 记忆与复习：将知识树同步到记忆系统，支持最近学习记录、掌握度反馈和复习任务管理。
+- 搜索与节点详情：支持按知识点、视频、章节、证据片段进行检索和详情查看。
 
-BiliMind 解决的核心问题：
+## 技术架构
 
-- **知识碎片化**：视频内容散落在不同收藏夹，缺乏结构化的知识组织
-- **学习路径缺失**：不知道先看什么、后看什么，缺少从基础到进阶的导航
-- **来源不可追溯**：记得某个概念来自某个视频，但无法快速定位到具体时间点
-
----
-
-## 核心能力
-
-1. **知识树浏览** — 从收藏视频中自动抽取知识实体和关系，构建层级化的知识树
-2. **学习路径规划** — 输入目标知识点，自动生成从基础到目标的学习路线
-3. **视频证据回溯** — 每个知识节点关联到具体视频的具体时间片段，点击即跳转到 B 站对应时刻
-4. **节点质量分级** — 核心节点、普通节点、弱关联节点分层展示，噪声实体自动过滤
-5. **知识搜索** — 跨知识节点、视频、时间片段的统一搜索
-
----
-
-## 核心页面
-
-### 知识树（主入口）
-
-三栏布局：左侧知识树导航 + 中间知识节点工作台 + 右侧视频证据区
-
-- 左栏：层级树结构，支持搜索、主题筛选、阶段过滤、难度筛选
-- 中栏：节点定义、前置/后续知识、相关节点、学习动作入口
-- 右栏：关联视频证据，每个时间片段均可一键跳转到 B 站对应位置
-
-![知识树页面](assets/screenshots/tree.png)
-
-### 学习路径
-
-输入目标知识点，选择模式（入门/标准/快速复习），自动生成学习路线图。
-每一步展示推荐理由、关联视频、关键时间片段。
-
-![学习路径页面](assets/screenshots/learning-path.png)
-
-### 搜索
-
-跨知识节点、视频、时间片段的统一搜索。
-支持按类型、难度、置信度筛选，结果可直接跳转到知识树节点或 B 站视频。
-
-![搜索页面](assets/screenshots/search.png)
-
----
-
-## 系统架构
-
+```text
+用户视频资源
+  |
+  v
+B 站收藏 / 视频合集 / 单视频
+  |
+  v
+内容获取层：字幕、标题、分 P 信息、ASR 兜底
+  |
+  v
+知识编译层：讯飞星火大模型 + 规则过滤 + 证据校验
+  |
+  v
+知识组织层：KnowledgeNode / KnowledgeEdge / NodeSegmentLink
+  |
+  v
+应用层：知识树、学习路径、知识智能体、知识对战、记忆复习
 ```
-┌──────────┐     ┌──────────────┐     ┌───────────────┐
-│  B站API  │────▶│  内容获取层   │────▶│  知识抽取引擎  │
-│ (收藏夹)  │     │ 字幕/ASR/降级 │     │ LLM + 规则    │
-└──────────┘     └──────────────┘     └───────┬───────┘
-                                              │
-                                              ▼
-┌──────────┐     ┌──────────────┐     ┌───────────────┐
-│  前端     │◀───│   API 层     │◀───│  知识图谱存储  │
-│ Next.js   │     │  FastAPI     │     │ networkx+SQLite│
-└──────────┘     └──────────────┘     └───────────────┘
-                        │
-                        ▼
-                 ┌──────────────┐
-                 │  向量检索层   │
-                 │  ChromaDB    │
-                 └──────────────┘
-```
-
----
-
-## 数据流
-
-1. **同步收藏夹** — 通过 B 站扫码登录，拉取收藏夹视频列表
-2. **内容获取** — 三级降级策略：官方字幕 → ASR 语音识别 → 基础信息
-3. **文本切片** — 按时间窗口切分为带时间戳的片段
-4. **知识抽取** — LLM 结构化抽取实体和关系，规则 fallback 兜底
-5. **图谱构建** — 实体去重归一化，构建 networkx 有向图，持久化到 SQLite
-6. **树投影** — 从图谱投影为前端展示的层级树，过滤噪声，质量分级
-7. **向量入库** — 文本片段向量化存入 ChromaDB，支持语义检索
-
----
 
 ## 技术栈
 
-| 层面 | 技术 |
-|------|------|
-| 后端 | Python, FastAPI, SQLAlchemy (async) |
-| 知识图谱 | networkx + SQLite (WAL 模式) |
-| 向量检索 | ChromaDB |
-| LLM/ASR | DashScope (通义千问/Paraformer) |
+| 模块 | 技术 |
+| --- | --- |
 | 前端 | Next.js 16, React 19, TypeScript, Tailwind CSS |
-| 数据库 | SQLite (aiosqlite, WAL 并发安全) |
+| 可视化 | Three.js, React Force Graph 3D |
+| 后端 | Python, FastAPI, SQLAlchemy Async |
+| 数据库 | SQLite WAL |
+| 知识图谱 | networkx + 自定义图存储 |
+| 向量检索 | ChromaDB |
+| 大模型 | 讯飞星火 Spark，兼容 OpenAI API 调用方式 |
+| ASR/降级 | 字幕优先，ASR 与标题网络调研兜底 |
 
----
+## 页面模块
+
+| 页面 | 路径 | 说明 |
+| --- | --- | --- |
+| 首页 | `/` | 项目入口与登录入口 |
+| 工作台 | `/workspace` | 视频列表、收藏、编译、视频播放 |
+| 知识树 | `/tree` | 知识节点、章节路径、视频证据 |
+| 知识智能体 | `/agent` | 小映智能问答与知识库检索 |
+| 学习路径 | `/learning-path` | 多模式学习路径规划 |
+| 知识对战 | `/game` | 知识题目生成与答题反馈 |
+| 记忆 | `/memory` | 学习记录与知识树同步 |
+| 复习 | `/review` | 复习任务与掌握度反馈 |
+| 搜索 | `/search` | 跨知识点、视频、片段检索 |
+| 节点详情 | `/node/[id]` | 单个知识点的解释、来源和视频跳转 |
 
 ## 本地运行
 
-### 前置条件
-
-- Python 3.10+
-- Node.js 18+
-- ffmpeg（音频转写需要）
-
-### 安装与启动
+### 1. 后端
 
 ```bash
-# 1. 克隆项目
-git clone https://github.com/jingyu-cyber/bilimind.git
-cd bilimind
-
-# 2. 安装后端依赖
 pip install -r requirements.txt
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
 
-# 3. 配置环境变量
-cp .env.example .env
-# 编辑 .env，填写 DashScope API Key
+### 2. 前端
 
-# 4. 启动后端
-python -m uvicorn app.main:app --reload
-
-# 5. 启动前端
+```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-后端 API 文档：`http://localhost:8000/docs`
-前端页面：`http://localhost:3000`
+默认访问：
 
----
+- 前端页面：`http://localhost:3000`
+- 后端接口：`http://localhost:8000`
+- API 文档：`http://localhost:8000/docs`
 
 ## 环境变量
 
-| 变量 | 说明 | 必填 |
-|------|------|------|
-| `DASHSCOPE_API_KEY` | DashScope API Key（LLM + ASR + Embedding） | 是 |
-| `OPENAI_BASE_URL` | 兼容 OpenAI 的 API 地址 | 否 |
-| `LLM_MODEL` | LLM 模型名 | 否 |
-| `EMBEDDING_MODEL` | Embedding 模型名 | 否 |
-| `DATABASE_URL` | 数据库连接串 | 否 |
-| `TREE_MIN_CONFIDENCE` | 知识树节点最低置信度阈值 | 否 |
-| `EXTRACTION_MIN_CONFIDENCE` | 知识抽取最低置信度 | 否 |
+项目使用 `.env` 管理运行配置。提交作品时请保留变量说明，不要提交真实密钥。
 
-无 DashScope Key 时，系统仍可运行但知识抽取将降级为规则模式，辅助问答功能不可用。
+| 变量 | 说明 |
+| --- | --- |
+| `LLM_PROVIDER` | 大模型提供方，讯飞星火使用 `spark` |
+| `SPARK_API_KEY` | 讯飞星火 API Key 或兼容密钥 |
+| `SPARK_BASE_URL` | 讯飞星火 OpenAI 兼容接口地址 |
+| `SPARK_MODEL` | 讯飞星火模型名称 |
+| `OPENAI_API_KEY` | OpenAI 兼容接口备用密钥 |
+| `OPENAI_BASE_URL` | OpenAI 兼容接口地址 |
+| `LLM_MODEL` | 默认模型名称 |
+| `DATABASE_URL` | 数据库连接地址 |
 
----
+## 作品亮点
 
-## 知识库构建流程
+- 从视频收藏出发，而不是让用户重新整理资料，降低学习知识库构建成本。
+- 知识点、论断、章节、视频证据互相绑定，避免大模型回答脱离原始材料。
+- 知识智能体“小映”接入讯飞星火大模型，能够结合知识树进行解释、总结和学习建议生成。
+- 支持视频合集分 P 编译，适合课程类、系列类学习资源。
+- 将知识树、记忆系统、复习任务和知识对战连接起来，形成学习闭环。
 
-1. 在首页扫码登录 B 站账号
-2. 选择要构建的收藏夹
-3. 系统自动拉取视频内容（字幕/ASR）
-4. 对每个视频片段进行知识实体抽取
-5. 构建知识图谱并投影为知识树
-6. 在知识树页浏览、在学习路径页规划、在搜索页检索
+## AI Coding 使用说明
 
----
+项目开发过程中使用了 Claude Code、Codex 等 AI Coding 工具辅助完成代码排查、功能修复、提示词优化、前后端联调与部署验证。核心设计、功能取舍、页面验收和最终提交由团队完成。
 
-## 页面说明
+## 提交说明
 
-| 页面 | 路径 | 说明 |
-|------|------|------|
-| 首页 | `/` | 产品介绍与登录入口 |
-| 知识树 | `/tree` | 主入口，三栏知识导航 |
-| 学习路径 | `/learning-path` | 输入目标生成学习路线 |
-| 搜索 | `/search` | 跨节点/视频/片段搜索 |
-| 知识问答 | `/chat` | 基于知识树的辅助问答 |
-| 节点详情 | `/node/[id]` | 知识节点完整信息 |
-| 视频详情 | `/video/[bvid]` | 视频知识点时间线 |
+软件杯作品提交建议包含：
 
----
-
-## 常见问题
-
-**Q：无 DashScope API Key 能用吗？**
-A：可以启动，但知识抽取降级为规则模式（质量较低），辅助问答功能不可用。建议配置 Key 以获取最佳体验。
-
-**Q：音频转写失败怎么办？**
-A：确保本机已安装 ffmpeg 并加入 PATH。部分 B 站音频 URL 存在鉴权限制，系统会自动执行本地下载 + 转码的兜底流程。
-
-**Q：知识树里有乱七八糟的节点？**
-A：系统已内置噪声过滤（口语碎片、无意义短词、过于宽泛的实体），并按置信度分级（核心/普通/弱关联）。弱关联节点默认折叠。可在设置中调整 `TREE_MIN_CONFIDENCE` 提高过滤门槛。
-
-**Q：database is locked 报错？**
-A：系统使用 SQLite WAL 模式并配置了 30 秒 busy_timeout，正常使用不应出现此问题。如仍遇到，可能是其他进程占用数据库文件。
-
----
-
-## 后续 Roadmap
-
-- [ ] 知识树节点手动编辑与合并
-- [ ] 知识图谱可视化（力导向图）
-- [ ] 多用户独立知识空间
-- [ ] 更多视频平台接入
-- [ ] 知识导出（Markdown / Anki 卡片）
-- [ ] 移动端适配优化
-
----
-
-## Acknowledgements
-
-BiliMind 在以下开源项目的基础上进行了进一步的演进和重构：
-
-- **[bilibili-rag](https://github.com/via007/bilibili-rag)** by [@via007](https://github.com/via007) — 原始项目提供了 B 站收藏夹接入、ASR 转写和基础 RAG 问答能力。BiliMind 在此基础上增加了知识图谱引擎、知识树构建与投影、学习路径规划、节点质量治理、视频片段证据追溯等能力，并对前端进行了完整的产品形态重构。
-## Star History
-
-<a href="https://www.star-history.com/?repos=jingyu-cyber%2Fbilimind&type=date&logscale=&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=jingyu-cyber/bilimind&type=date&theme=dark&logscale&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=jingyu-cyber/bilimind&type=date&logscale&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=jingyu-cyber/bilimind&type=date&logscale&legend=top-left" />
- </picture>
-</a>
----
+- 项目源码
+- 运行与部署说明
+- 演示 PPT
+- 7 分钟以内演示视频
+- 测试说明与功能截图
+- 模型与接口配置说明
+- AI Coding 使用说明
 
 ## License
 

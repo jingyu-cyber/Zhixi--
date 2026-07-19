@@ -1429,7 +1429,7 @@ async def compile_video(
     # Step 7: 同步 concepts 到 knowledge_nodes（兼容知识树/搜索等读取 knowledge_nodes 的模块）
     synced_node_count = 0
     synced_edge_count = 0
-    from app.models import KnowledgeNode, KnowledgeEdge
+    from app.models import KnowledgeNode, KnowledgeEdge, NodeSegmentLink
 
     async def ensure_knowledge_edge(source_id: int, target_id: int, relation_type: str, weight: float, confidence: float) -> bool:
         if not source_id or not target_id or source_id == target_id:
@@ -1451,6 +1451,31 @@ async def compile_video(
                 weight=weight,
                 confidence=confidence,
                 evidence_video_bvid=bvid,
+                session_id=session_id,
+                owner_mid=owner_mid,
+            )
+        )
+        return True
+
+    async def ensure_node_segment_link(node_id: int, segment_id: int, confidence: float) -> bool:
+        if not node_id or not segment_id:
+            return False
+        existing_link = await db.execute(
+            select(NodeSegmentLink).where(
+                NodeSegmentLink.node_id == node_id,
+                NodeSegmentLink.segment_id == segment_id,
+                NodeSegmentLink.video_bvid == bvid,
+            )
+        )
+        if existing_link.scalars().first():
+            return False
+        db.add(
+            NodeSegmentLink(
+                node_id=node_id,
+                segment_id=segment_id,
+                video_bvid=bvid,
+                relation="explains",
+                confidence=confidence,
                 session_id=session_id,
                 owner_mid=owner_mid,
             )
@@ -1526,6 +1551,17 @@ async def compile_video(
 
         if await ensure_knowledge_edge(kn.id, topic_kn.id, "belongs_to", 1.0, 0.6):
             synced_edge_count += 1
+
+        linked_segment_ids = set()
+        for cl in cdata.get("claims", []):
+            seg_id = None
+            for seg_rec in segment_records:
+                if seg_rec.start_time == cl.get("start_time") and seg_rec.end_time == cl.get("end_time"):
+                    seg_id = seg_rec.id
+                    break
+            if seg_id and seg_id not in linked_segment_ids:
+                linked_segment_ids.add(seg_id)
+                await ensure_node_segment_link(kn.id, seg_id, cl.get("confidence", 0.5))
 
     concept_nodes = list(knowledge_nodes_by_norm.values())
     for idx, source_node in enumerate(concept_nodes):

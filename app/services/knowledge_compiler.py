@@ -1199,6 +1199,7 @@ async def compile_video(
 
     # 清除此视频的旧编译数据（按 bvid + page_cid 精确清理）
     from sqlalchemy import delete as sql_delete
+    from app.models import KnowledgeEdge, NodeSegmentLink
 
     # 1. 找到此视频此分集旧 claims 关联的 concept_id
     claim_filter = [Claim.video_bvid == bvid]
@@ -1214,15 +1215,34 @@ async def compile_video(
         sql_delete(Claim).where(*claim_filter)
     )
 
-    # 3. 删除此视频此分集的旧 segments
+    # 3. 找到并清理此视频此分集的旧 segments 证据链接
     seg_filter = [Segment.video_bvid == bvid]
     if is_page:
         seg_filter.append(Segment.page_cid == page_cid)
+    old_segments_result = await db.execute(
+        select(Segment.id).where(*seg_filter)
+    )
+    old_segment_ids = [row[0] for row in old_segments_result.fetchall() if row[0]]
+    if old_segment_ids:
+        await db.execute(
+            sql_delete(NodeSegmentLink).where(
+                NodeSegmentLink.video_bvid == bvid,
+                NodeSegmentLink.segment_id.in_(old_segment_ids),
+            )
+        )
+        await db.execute(
+            sql_delete(KnowledgeEdge).where(
+                KnowledgeEdge.evidence_video_bvid == bvid,
+                KnowledgeEdge.evidence_segment_id.in_(old_segment_ids),
+            )
+        )
+
+    # 4. 删除此视频此分集的旧 segments
     await db.execute(
         sql_delete(Segment).where(*seg_filter)
     )
 
-    # 4. 删除没有其他 claim 的孤儿概念
+    # 5. 删除没有其他 claim 的孤儿概念
     for cid in old_concept_ids:
         remaining = await db.scalar(
             select(func.count()).select_from(Claim).where(Claim.concept_id == cid)
@@ -1232,7 +1252,7 @@ async def compile_video(
                 sql_delete(Concept).where(Concept.id == cid)
             )
 
-    # 5. 删除旧的 ConceptRelation
+    # 6. 删除旧的 ConceptRelation
     if owner_mid is not None:
         await db.execute(
             sql_delete(ConceptRelation).where(ConceptRelation.owner_mid == owner_mid)

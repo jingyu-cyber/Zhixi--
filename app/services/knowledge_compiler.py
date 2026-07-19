@@ -1332,12 +1332,64 @@ async def compile_video(
     # Step 7: 同步 concepts 到 knowledge_nodes（兼容知识树/搜索等读取 knowledge_nodes 的模块）
     synced_node_count = 0
     synced_edge_count = 0
+    from app.models import KnowledgeNode, KnowledgeEdge
+
+    async def ensure_knowledge_edge(source_id: int, target_id: int, relation_type: str, weight: float, confidence: float) -> bool:
+        if not source_id or not target_id or source_id == target_id:
+            return False
+        existing_edge = await db.execute(
+            select(KnowledgeEdge).where(
+                KnowledgeEdge.source_node_id == source_id,
+                KnowledgeEdge.target_node_id == target_id,
+                KnowledgeEdge.relation_type == relation_type,
+            )
+        )
+        if existing_edge.scalars().first():
+            return False
+        db.add(
+            KnowledgeEdge(
+                source_node_id=source_id,
+                target_node_id=target_id,
+                relation_type=relation_type,
+                weight=weight,
+                confidence=confidence,
+                evidence_video_bvid=bvid,
+                session_id=session_id,
+                owner_mid=owner_mid,
+            )
+        )
+        return True
+
+    topic_norm_name = video_title.lower().strip()
+    topic_result = await db.execute(
+        select(KnowledgeNode).where(
+            KnowledgeNode.normalized_name == topic_norm_name,
+            KnowledgeNode.owner_mid == owner_mid,
+            KnowledgeNode.node_type == "topic",
+        )
+    )
+    topic_kn = topic_result.scalars().first()
+    if not topic_kn:
+        topic_kn = KnowledgeNode(
+            node_type="topic",
+            name=video_title,
+            normalized_name=topic_norm_name,
+            definition=f"来自视频《{video_title}》的知识主题",
+            difficulty=1,
+            confidence=0.5,
+            source_count=1,
+            session_id=session_id,
+            owner_mid=owner_mid,
+        )
+        db.add(topic_kn)
+        await db.flush()
+
+    knowledge_nodes_by_norm = {}
     for norm_name, cdata in concept_map.items():
         concept_id = norm_to_concept_id.get(norm_name)
         if not concept_id:
             continue
         # 检查是否已存在同名的 knowledge_node
-        from app.models import KnowledgeNode, KnowledgeEdge
         existing_node = await db.execute(
             select(KnowledgeNode).where(
                 KnowledgeNode.normalized_name == norm_name,
@@ -1366,68 +1418,25 @@ async def compile_video(
             db.add(kn)
             await db.flush()
         synced_node_count += 1
+        knowledge_nodes_by_norm[norm_name] = kn
 
-        # 为每个 concept 的 claims 创建 edge 到相关视频
-        for cl in cdata.get("claims", []):
-            node_id = kn.id
-            # 连接到代表该视频的节点（如果有的话）
-            if cdata["name"] != video_title:
-                # 查找代表该视频的 knowledge_node
-                title_node = await db.execute(
-                    select(KnowledgeNode).where(
-                        KnowledgeNode.normalized_name == video_title.lower().strip(),
-                        KnowledgeNode.owner_mid == owner_mid,
-                    )
-                )
-                title_kn = title_node.scalars().first()
-                if title_kn and title_kn.id != kn.id:
-                    # 检查是否已有此边
-                    existing_edge = await db.execute(
-                        select(KnowledgeEdge).where(
-                            KnowledgeEdge.source_node_id == kn.id,
-                            KnowledgeEdge.target_node_id == title_kn.id,
-                            KnowledgeEdge.relation_type == "related_to",
-                        )
-                    )
-                    if not existing_edge.scalars().first():
-                        edge = KnowledgeEdge(
-                            source_node_id=kn.id,
-                            target_node_id=title_kn.id,
-                            relation_type="related_to",
-                            weight=1.0,
-                            confidence=0.5,
-                            evidence_video_bvid=bvid,
-                            session_id=session_id,
-                            owner_mid=owner_mid,
-                        )
-                        db.add(edge)
-                        synced_edge_count += 1
-                elif not title_kn:
-                    # 创建视频主题节点
-                    title_kn = KnowledgeNode(
-                        node_type="topic",
-                        name=video_title,
-                        normalized_name=video_title.lower().strip(),
-                        definition=f"来自视频《{video_title}》的知识主题",
-                        difficulty=1,
-                        confidence=0.5,
-                        source_count=1,
-                        session_id=session_id,
-                        owner_mid=owner_mid,
-                    )
-                    db.add(title_kn)
-                    await db.flush()
-                    edge = KnowledgeEdge(
-                        source_node_id=kn.id,
-                        target_node_id=title_kn.id,
-                        relation_type="related_to",
-                        weight=1.0,
-                        confidence=0.5,
-                        evidence_video_bvid=bvid,
-                        session_id=session_id, owner_mid=owner_mid,
-                    )
-                    db.add(edge)
-                    synced_edge_count += 1
+        if await ensure_knowledge_edge(kn.id, topic_kn.id, "belongs_to", 1.0, 0.6):
+            synced_edge_count += 1
+
+    concept_nodes = list(knowledge_nodes_by_norm.values())
+    for idx, source_node in enumerate(concept_nodes):
+        for target_node in concept_nodes[idx + 1:]:
+            if await ensure_knowledge_edge(source_node.id, target_node.id, "co_occurrence", 0.5, 0.35):
+                synced_edge_count += 1
+            if await ensure_knowledge_edge(target_node.id, source_node.id, "co_occurrence", 0.5, 0.35):
+                synced_edge_count += 1
+
+    for src_norm, tgt_norm in prerequisite_pairs:
+        src_node = knowledge_nodes_by_norm.get(src_norm)
+        tgt_node = knowledge_nodes_by_norm.get(tgt_norm)
+        if src_node and tgt_node:
+            if await ensure_knowledge_edge(src_node.id, tgt_node.id, "prerequisite_of", 1.0, 0.65):
+                synced_edge_count += 1
 
     await db.commit()
 

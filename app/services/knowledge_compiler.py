@@ -188,6 +188,37 @@ def _extract_evidence_snippet(raw_text: str, statement: str) -> str:
     return best[:500]
 
 
+def _best_claim_statement(claims: list[dict]) -> str:
+    useful_claims = [
+        cl for cl in claims
+        if _has_claim_substance(cl.get("statement", ""))
+    ]
+    if not useful_claims:
+        return ""
+    best = max(
+        useful_claims,
+        key=lambda cl: (cl.get("confidence", 0.5), len(cl.get("statement", ""))),
+    )
+    return (best.get("statement") or "").strip()
+
+
+def _is_better_node_definition(current: str | None, candidate: str) -> bool:
+    current_text = (current or "").strip()
+    candidate_text = (candidate or "").strip()
+    if not candidate_text:
+        return False
+    if not current_text:
+        return True
+    if len(current_text) < 24 and len(candidate_text) > len(current_text):
+        return True
+    generic_patterns = [
+        r"来自视频《.*》的知识主题",
+        r"视频.*(涉及|相关|主题)",
+        r"^(本视频|本节|这一讲).{0,12}(介绍|讲解)",
+    ]
+    return any(re.search(pattern, current_text) for pattern in generic_patterns)
+
+
 def _normalize_name(name: str) -> str:
     """归一化概念名"""
     name = name.strip().lower()
@@ -1463,18 +1494,25 @@ async def compile_video(
             )
         )
         kn = existing_node.scalars().first()
+        best_claim_statement = _best_claim_statement(cdata.get("claims", []))
+        node_definition = (cdata.get("definition") or "").strip()
+        if best_claim_statement and (
+            len(node_definition) < 24 or _claim_evidence_overlap(node_definition, best_claim_statement) < 0.35
+        ):
+            node_definition = f"{node_definition}；{best_claim_statement}" if node_definition else best_claim_statement
+        node_definition = node_definition[:500]
         if kn:
             # 更新已有节点
             kn.source_count = max(kn.source_count or 1, cdata["source_count"])
             kn.confidence = max(kn.confidence or 0.5, 0.5)
-            if cdata["definition"] and not kn.definition:
-                kn.definition = cdata["definition"]
+            if _is_better_node_definition(kn.definition, node_definition):
+                kn.definition = node_definition
         else:
             kn = KnowledgeNode(
                 node_type="concept",
                 name=cdata["name"],
                 normalized_name=norm_name,
-                definition=cdata["definition"],
+                definition=node_definition,
                 difficulty=cdata["difficulty"],
                 confidence=0.5,
                 source_count=cdata["source_count"],

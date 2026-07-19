@@ -47,7 +47,7 @@ export default function SearchPage() {
     <div className="app-shell">
       <header className="app-topbar">
         <div className="brand">
-          <span style={{ fontSize: 18, fontWeight: 700 }}>BiliMind</span>
+          <span style={{ fontSize: 18, fontWeight: 700 }}>知析 ZhiXi</span>
         </div>
         <UserTopbar />
       </header>

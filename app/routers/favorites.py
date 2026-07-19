@@ -104,9 +104,10 @@ async def get_favorites_list(session_id: str = Query(..., description="会话ID"
     cookies = session.get("cookies", {})
     user_info = session.get("user_info", {})
 
-    # 演示账号（mid=0）：从本地数据库读取收藏夹，不从 B站 API 拉取
+    # 演示账号（mid=0）或无有效 B 站 cookie：从本地数据库读取收藏夹，不从 B站 API 拉取
     mid = int(user_info.get("mid") or cookies.get("DedeUserID") or 0)
-    if mid == 0:
+    has_valid_cookies = bool(cookies.get("SESSDATA"))
+    if mid == 0 or not has_valid_cookies:
         from app.database import get_db_context
         async with get_db_context() as db:
             result = await db.execute(
@@ -139,9 +140,11 @@ async def get_favorites_list(session_id: str = Query(..., description="会话ID"
         
         result = []
         for folder in folders:
+            if not folder:
+                continue
             result.append(FavoriteFolderInfo(
-                media_id=folder["id"],
-                title=folder["title"],
+                media_id=folder.get("id") or folder.get("media_id"),
+                title=folder.get("title") or "未命名收藏夹",
                 media_count=folder.get("media_count", 0),
                 is_selected=True,
                 is_default=_is_default_folder(folder)
@@ -172,8 +175,9 @@ async def get_favorite_videos(
     user_info = session.get("user_info", {})
     mid = int(user_info.get("mid") or cookies.get("DedeUserID") or 0)
 
-    # 演示用户：从本地数据库返回视频列表
-    if mid == 0:
+    # 演示用户或无有效 B 站 cookie：从本地数据库返回视频列表
+    has_valid_cookies = bool(cookies.get("SESSDATA"))
+    if mid == 0 or not has_valid_cookies:
         from app.database import get_db_context
         from app.models import FavoriteVideo
         async with get_db_context() as db:

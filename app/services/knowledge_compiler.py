@@ -996,19 +996,22 @@ async def _compile_from_web(
             if not isinstance(c_source_urls, list):
                 c_source_urls = source_urls_list
 
-            concept_row = Concept(
-                session_id=session_id,
-                owner_mid=owner_mid,
-                name=c.get("name", ""),
-                normalized_name=norm_name,
-                definition=c.get("definition", ""),
-                difficulty=c.get("difficulty", 1),
-                source_count=1,
-                video_count=1,
-                video_bvid=bvid,
-                source_type="web_research",
-                source_urls=_json.dumps(c_source_urls, ensure_ascii=False),
-            )
+            concept_kwargs = {
+                "session_id": session_id,
+                "owner_mid": owner_mid,
+                "name": c.get("name", ""),
+                "normalized_name": norm_name,
+                "definition": c.get("definition", ""),
+                "difficulty": c.get("difficulty", 1),
+                "source_count": 1,
+                "video_count": 1,
+                "video_bvid": bvid,
+            }
+            if hasattr(Concept, "source_type"):
+                concept_kwargs["source_type"] = "web_research"
+            if hasattr(Concept, "source_urls"):
+                concept_kwargs["source_urls"] = _json.dumps(c_source_urls, ensure_ascii=False)
+            concept_row = Concept(**concept_kwargs)
             db.add(concept_row)
             await db.flush()
 

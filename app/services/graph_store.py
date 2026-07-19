@@ -121,16 +121,28 @@ class GraphStore:
         return self.get_neighbors(node_id, relation_type="prerequisite_of", direction="out")
 
     def get_related(self, node_id: int) -> list[dict]:
-        """获取相关节点（related_to 关系，双向）"""
-        return self.get_neighbors(node_id, relation_type="related_to", direction="both")
+        """获取相关节点（related_to/co_occurrence 关系，双向）"""
+        return self.get_related_by_type(node_id, ["related_to", "co_occurrence"])
 
     def get_children(self, node_id: int) -> list[dict]:
-        """获取子节点（通过 part_of 关系指向本节点的源节点）"""
-        return self.get_neighbors(node_id, relation_type="part_of", direction="in")
+        """获取子节点（通过 part_of/belongs_to 关系指向本节点的源节点）"""
+        children = []
+        for relation_type in ("part_of", "belongs_to"):
+            children.extend(self.get_neighbors(node_id, relation_type=relation_type, direction="in"))
+        seen = set()
+        unique = []
+        for child in children:
+            if child["id"] in seen:
+                continue
+            seen.add(child["id"])
+            unique.append(child)
+        return unique
 
     def get_parent(self, node_id: int) -> Optional[dict]:
-        """获取父节点（本节点通过 part_of 关系指向的目标节点）"""
-        parents = self.get_neighbors(node_id, relation_type="part_of", direction="out")
+        """获取父节点（本节点通过 part_of/belongs_to 关系指向的目标节点）"""
+        parents = []
+        for relation_type in ("part_of", "belongs_to"):
+            parents.extend(self.get_neighbors(node_id, relation_type=relation_type, direction="out"))
         return parents[0] if parents else None
 
     def get_subgraph_nodes(self, topic_id: int) -> list[dict]:

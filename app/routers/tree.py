@@ -276,8 +276,10 @@ async def get_node_detail(
     # 关联主题（去重）
     related_topics = []
     seen_topic_ids = set()
-    part_of_targets = gs.get_neighbors(node_id, relation_type="part_of", direction="out")
-    for t in part_of_targets:
+    topic_targets = []
+    for relation_type in ("part_of", "belongs_to"):
+        topic_targets.extend(gs.get_neighbors(node_id, relation_type=relation_type, direction="out"))
+    for t in topic_targets:
         if t.get("node_type") == "topic" and t["id"] != (node.main_topic_id or -1) and t["id"] not in seen_topic_ids:
             seen_topic_ids.add(t["id"])
             related_topics.append({"id": t["id"], "name": t.get("name", "")})

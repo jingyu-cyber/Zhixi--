@@ -1252,10 +1252,13 @@ async def compile_video(
                 sql_delete(Concept).where(Concept.id == cid)
             )
 
-    # 6. 删除旧的 ConceptRelation
-    if owner_mid is not None:
+    # 6. 删除旧的 ConceptRelation（仅限本次重编涉及的旧概念，避免误删其他视频关系）
+    if old_concept_ids:
         await db.execute(
-            sql_delete(ConceptRelation).where(ConceptRelation.owner_mid == owner_mid)
+            sql_delete(ConceptRelation).where(
+                ConceptRelation.source_concept_id.in_(old_concept_ids),
+                ConceptRelation.target_concept_id.in_(old_concept_ids),
+            )
         )
 
     await db.flush()
@@ -1407,6 +1410,7 @@ async def compile_video(
         if src_id and tgt_id and src_id != tgt_id:
             rel = ConceptRelation(
                 session_id=session_id,
+                owner_mid=owner_mid,
                 source_concept_id=src_id,
                 target_concept_id=tgt_id,
                 relation_type="prerequisite_of",

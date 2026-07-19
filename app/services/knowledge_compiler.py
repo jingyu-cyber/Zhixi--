@@ -132,6 +132,57 @@ def _is_noise_claim(statement: str) -> bool:
     return False
 
 
+def _claim_evidence_overlap(statement: str, evidence: str) -> float:
+    stmt_chars = {
+        ch.lower()
+        for ch in (statement or "")
+        if re.match(r"[\w\u4e00-\u9fff]", ch, re.UNICODE)
+    }
+    evidence_chars = {
+        ch.lower()
+        for ch in (evidence or "")
+        if re.match(r"[\w\u4e00-\u9fff]", ch, re.UNICODE)
+    }
+    if not stmt_chars:
+        return 0.0
+    return len(stmt_chars & evidence_chars) / len(stmt_chars)
+
+
+def _has_claim_substance(statement: str) -> bool:
+    stmt = (statement or "").strip()
+    if len(stmt) < 8:
+        return False
+    generic_patterns = [
+        r"^(本节|本视频|这个视频|本课程|这一讲).{0,12}(介绍|讲解|学习|分享)",
+        r"(相关|有关|涉及|包含).{0,6}(内容|知识|主题)$",
+        r"^(概念|知识点|内容|方法|问题|部分)$",
+    ]
+    if any(re.search(pattern, stmt) for pattern in generic_patterns):
+        return False
+    relation_markers = (
+        "是", "指", "通过", "用于", "因为", "所以", "需要", "可以", "会", "将",
+        "使", "包括", "分为", "区别", "例如", "导致", "影响", "依赖", "实现",
+        "解决", "避免", "支持", "means", "uses", "requires", "because", "therefore",
+    )
+    return len(stmt) >= 18 or any(marker in stmt.lower() for marker in relation_markers)
+
+
+def _extract_evidence_snippet(raw_text: str, statement: str) -> str:
+    raw = (raw_text or "").strip()
+    if len(raw) <= 500:
+        return raw
+    sentences = [s.strip() for s in re.split(r"[。！？.!?\n]", raw) if s.strip()]
+    if not sentences:
+        return raw[:500]
+    best = max(sentences, key=lambda s: _claim_evidence_overlap(statement, s))
+    if len(best) < 30:
+        idx = raw.find(best)
+        if idx >= 0:
+            start = max(0, idx - 160)
+            return raw[start:start + 500]
+    return best[:500]
+
+
 def _normalize_name(name: str) -> str:
     """归一化概念名"""
     name = name.strip().lower()
@@ -550,21 +601,28 @@ def _verify_claims(
                 total_dropped_claims += 1
                 continue
 
+            if not _has_claim_substance(stmt):
+                total_dropped_claims += 1
+                continue
+
             # 规则3：置信度阈值
             if conf < 0.4:
                 total_dropped_claims += 1
                 continue
 
+            raw_overlap = _claim_evidence_overlap(stmt, raw)
+            if raw_overlap < 0.25 and stmt not in raw:
+                total_dropped_claims += 1
+                continue
+
             # 规则4：statement 字符覆盖率 > 30%
             if all_text and len(stmt) > 0:
-                stmt_chars = set(stmt.replace(" ", ""))
-                text_chars = set(all_text.replace(" ", ""))
-                if len(stmt_chars) > 0:
-                    overlap = len(stmt_chars & text_chars) / len(stmt_chars)
-                    if overlap < 0.3:
-                        total_dropped_claims += 1
-                        continue
+                overlap = _claim_evidence_overlap(stmt, all_text)
+                if overlap < 0.3:
+                    total_dropped_claims += 1
+                    continue
 
+            cl["raw_text"] = _extract_evidence_snippet(raw, stmt)
             verified_claims.append(cl)
 
         if verified_claims:

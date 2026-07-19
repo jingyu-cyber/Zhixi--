@@ -106,6 +106,32 @@ def _is_noise_concept(name: str) -> bool:
     return False
 
 
+def _is_low_quality_transcript(text: str) -> bool:
+    """Detect ASR/music fragments that should not be used as knowledge evidence."""
+    if not text or len(text.strip()) < 40:
+        return True
+    music_marks = text.count("♪") + text.count("♫")
+    zh_chars = len(re.findall(r"[\u4e00-\u9fff]", text))
+    ascii_words = re.findall(r"\b[a-zA-Z]+\b", text)
+    short_ascii = [w for w in ascii_words if len(w) <= 4]
+    if music_marks >= 3:
+        return True
+    if zh_chars < 20 and ascii_words and len(short_ascii) / max(len(ascii_words), 1) > 0.65:
+        return True
+    return False
+
+
+def _is_noise_claim(statement: str) -> bool:
+    stmt = (statement or "").strip()
+    if len(stmt) < 6:
+        return True
+    if "♪" in stmt or "♫" in stmt:
+        return True
+    if re.search(r"\b(yeah|baby|maybe|da da|la la|can't you see)\b", stmt.lower()):
+        return True
+    return False
+
+
 def _normalize_name(name: str) -> str:
     """归一化概念名"""
     name = name.strip().lower()
@@ -140,6 +166,9 @@ def _compile_segment_rules(
     从文本中提取概念名词和论断，不使用 LLM
     """
     if not text or len(text.strip()) < 30:
+        return {"concepts": [], "claims": [], "prerequisites": []}
+    if _is_low_quality_transcript(text):
+        logger.info("[片段编译] 跳过低质量 ASR/歌词片段，等待标题/网络兜底")
         return {"concepts": [], "claims": [], "prerequisites": []}
 
     # 提取英文术语（2+字母，可能含连字符）
@@ -355,6 +384,8 @@ def _parse_compilation_output(raw: str) -> dict:
         concept_name = (cl.get("concept") or "").strip()
         statement = (cl.get("statement") or "").strip()
         if not concept_name or not statement:
+            continue
+        if _is_noise_concept(concept_name) or _is_noise_claim(statement):
             continue
         confidence = float(cl.get("confidence", 0.5))
         if confidence < 0.3:
@@ -749,6 +780,13 @@ def _calculate_density(
 WEB_RESEARCH_PROMPT = """你是知识图谱构建专家。请根据你的知识，为以下主题生成结构化的概念、定义和论断。
 
 主题：{topic}
+
+补充要求：
+1. 如果主题像课程分集标题，请围绕该分集标题提炼可学习的核心知识点，不要泛泛扩写整个领域。
+2. 概念必须是可教学、可复习的术语或方法，例如算法、协议、密码体制、命令、工具、公式、步骤。
+3. 论断必须说明“这个概念在本主题中要掌握什么”，避免只写百科定义。
+4. 每个概念至少给 1 条论断；论断要具体到用途、原理、步骤、区别、风险或例子。
+5. 不要输出“课程、介绍、学习、内容、视频、方法、代码速度”等空泛节点。
 
 请输出JSON格式（不要输出其他内容）：
 {{
